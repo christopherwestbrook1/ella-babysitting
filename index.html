@@ -15,7 +15,42 @@
 </head>
 <body>
   <div id="root"></div>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script type="text/babel">
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyCsFVkTkfZva3d6AM6yFpa4w2MnmidjjEM",
+      authDomain: "ella-s-babysitting-website.firebaseapp.com",
+      projectId: "ella-s-babysitting-website",
+      storageBucket: "ella-s-babysitting-website.firebasestorage.app",
+      messagingSenderId: "150631979016",
+      appId: "1:150631979016:web:14f14e052ed959aa8f99bd"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // Firestore helpers
+    async function fsGet(key) {
+      try {
+        const doc = await db.collection('sitedata').doc(key).get();
+        return doc.exists ? doc.data().value : null;
+      } catch(e) { return null; }
+    }
+    async function fsSet(key, value) {
+      try {
+        await db.collection('sitedata').doc(key).set({ value });
+      } catch(e) { console.error('fsSet error', e); }
+    }
+    function fsListen(key, callback) {
+      return db.collection('sitedata').doc(key).onSnapshot(doc => {
+        if (doc.exists) callback(doc.data().value);
+      });
+    }
+
     const { useState } = React;
 
 
@@ -72,9 +107,25 @@ function getFirstDayOfMonth(y,m) { return new Date(y,m,1).getDay(); }
 function emptyChild() { return {age:"",specialNeeds:"",allergies:"",epipen:"",additionalInfo:""}; }
 
 function useStorage(key, def) {
-  const [v, setV] = useState(() => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):def; } catch { return def; } });
-  const set = (val) => { setV(val); try { localStorage.setItem(key,JSON.stringify(val)); } catch {} };
-  return [v, set];
+  const [v, setV] = useState(def);
+  const [loaded, setLoaded] = useState(false);
+  
+  React.useEffect(() => {
+    fsGet(key).then(val => {
+      if (val !== null) setV(val);
+      setLoaded(true);
+      // Also listen for real-time updates
+      fsListen(key, newVal => {
+        setV(newVal);
+      });
+    });
+  }, [key]);
+
+  const set = (val) => {
+    setV(val);
+    fsSet(key, val);
+  };
+  return [v, set, loaded];
 }
 
 function fillTemplate(template, vars) {
@@ -566,11 +617,11 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
 }
 
 function App() {
-  const [bio,setBio]=useStorage(STORAGE_KEYS.BIO,DEFAULT_BIO);
+  const [bio,setBio,bioLoaded]=useStorage(STORAGE_KEYS.BIO,DEFAULT_BIO);
   const [credentials,setCredentials]=useStorage(STORAGE_KEYS.CREDENTIALS,DEFAULT_CREDENTIALS);
   const [rates,setRates]=useStorage(STORAGE_KEYS.RATES,DEFAULT_RATES);
-  const [availability,setAvailability]=useStorage(STORAGE_KEYS.AVAILABILITY,{});
-  const [requests,setRequests]=useStorage(STORAGE_KEYS.REQUESTS,[]);
+  const [availability,setAvailability,availLoaded]=useStorage(STORAGE_KEYS.AVAILABILITY,{});
+  const [requests,setRequests,reqLoaded]=useStorage(STORAGE_KEYS.REQUESTS,[]);
   const [contact,setContact]=useStorage(STORAGE_KEYS.CONTACT,DEFAULT_CONTACT);
   const [paymentEmail,setPaymentEmail]=useStorage(STORAGE_KEYS.PAYMENT_EMAIL,DEFAULT_PAYMENT_EMAIL);
   const [confirmTemplate,setConfirmTemplate]=useStorage(STORAGE_KEYS.CONFIRM_TEMPLATE,DEFAULT_CONFIRM_TEMPLATE);

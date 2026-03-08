@@ -17,6 +17,7 @@
   <div id="root"></div>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
   <script type="text/babel">
 
     // Firebase configuration
@@ -31,6 +32,20 @@
 
     // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
+
+    // EmailJS configuration
+    emailjs.init("lXnQR_OX-v67VzYgw");
+    const EMAILJS_SERVICE = "service_mjwa0jq";
+    const EMAILJS_TEMPLATE_ELLA = "template_i8zrbgn";   // notifies Ella of new request
+    const EMAILJS_TEMPLATE_PARENT = "template_4yewky3"; // notifies parent of confirm/decline
+
+    function sendEmailToElla(params) {
+      return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE_ELLA, params);
+    }
+    function sendEmailToParent(params) {
+      return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE_PARENT, params);
+    }
+
     const db = firebase.firestore();
 
     // Firestore helpers
@@ -202,8 +217,14 @@ function RequestCard({req,onUpdate,replyText,setReplyText,confirmTemplate,declin
       phone: contact.phone,
       paymentEmail: paymentEmail,
     });
-    const subject = encodeURIComponent(`Babysitting Confirmed — ${formatDateDisplay(req.date)}`);
-    window.open(`mailto:${req.parentEmail}?subject=${subject}&body=${encodeURIComponent(body)}`, "_blank");
+    sendEmailToParent({
+      parent_name: req.parentName,
+      parent_email: req.parentEmail,
+      date: formatDateDisplay(req.date),
+      time: req.time,
+      message: body,
+    }).then(() => alert("✓ Confirmation email sent to " + req.parentName + "!"))
+      .catch(err => { console.error(err); alert("Email failed — please contact parent directly at " + req.parentEmail); });
     onUpdate(req.id, "confirmed", "");
   }
 
@@ -215,8 +236,14 @@ function RequestCard({req,onUpdate,replyText,setReplyText,confirmTemplate,declin
       phone: contact.phone,
       paymentEmail: paymentEmail,
     });
-    const subject = encodeURIComponent(`Re: Babysitting Request — ${formatDateDisplay(req.date)}`);
-    window.open(`mailto:${req.parentEmail}?subject=${subject}&body=${encodeURIComponent(body + (reply ? "\n\n" + reply : ""))}`, "_blank");
+    sendEmailToParent({
+      parent_name: req.parentName,
+      parent_email: req.parentEmail,
+      date: formatDateDisplay(req.date),
+      time: req.time,
+      message: body + (reply ? "\n\n" + reply : ""),
+    }).then(() => alert("✓ Decline email sent to " + req.parentName + "!"))
+      .catch(err => { console.error(err); alert("Email failed — please contact parent directly at " + req.parentEmail); });
     onUpdate(req.id, "declined", reply);
   }
 
@@ -232,13 +259,13 @@ function RequestCard({req,onUpdate,replyText,setReplyText,confirmTemplate,declin
         {req.children.map((c,i)=><div key={i} style={{background:"#f3effe",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
           <div style={{fontWeight:700,marginBottom:4}}>Child {i+1}: Age {c.age}</div>
           {c.specialNeeds&&<div style={{fontSize:13,color:"#555"}}>Special needs: {c.specialNeeds}</div>}
-          <div style={{fontSize:13,color:c.allergies!=="none"?"#d9534f":"#7b5ea7"}}>Allergies: {c.allergies==="none"?"None":c.allergies}{c.allergies!=="none"&&c.epipen?` · EpiPen: ${c.epipen}`:""}</div>
+          <div style={{fontSize:13,color:c.allergies!=="none"?"#d9534f":"#7b5ea7"}}>Allergies: {c.allergies==="none"?"None":c.allergies}{c.allergies!=="none"&&c.epipen?` · Severity: ${c.epipen==="severe_epipen"?"Severe — EpiPen available":"Not needed"}`:""}</div>
           {c.additionalInfo&&<div style={{fontSize:13,color:"#555"}}>Notes: {c.additionalInfo}</div>}
         </div>)}
         {req.additionalInfo&&<Inf label="Additional Notes" value={req.additionalInfo}/>}
         {req.status==="pending"&&<div style={{marginTop:16,borderTop:"1px solid #e0d4f7",paddingTop:16}}>
           <div style={{background:"#f3effe",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#555"}}>
-            <strong>Note:</strong> Clicking Confirm or Decline will open your email app with a pre-filled message to {req.parentName}. You can edit it before sending.
+            <strong>Note:</strong> Clicking Confirm or Decline will automatically send an email to {req.parentName}. You can edit it before sending.
           </div>
           <FF label="Additional note to add to decline email (optional)">
             <textarea value={reply} onChange={e=>setReplyText({...replyText,[req.id]:e.target.value})}
@@ -246,8 +273,8 @@ function RequestCard({req,onUpdate,replyText,setReplyText,confirmTemplate,declin
               style={{...S.input,minHeight:60,resize:"vertical"}}/>
           </FF>
           <div style={{display:"flex",gap:10,marginTop:10}}>
-            <button onClick={sendConfirm} style={{...S.btnG,flex:1}}>✓ Confirm & Email Parent</button>
-            <button onClick={sendDecline} style={{background:"#d9534f",color:"#fff",border:"none",borderRadius:8,padding:"10px 20px",cursor:"pointer",flex:1,fontWeight:700}}>✗ Decline & Email Parent</button>
+            <button onClick={sendConfirm} style={{...S.btnG,flex:1}}>✓ Confirm & Send Email</button>
+            <button onClick={sendDecline} style={{background:"#d9534f",color:"#fff",border:"none",borderRadius:8,padding:"10px 20px",cursor:"pointer",flex:1,fontWeight:700}}>✗ Decline & Send Email</button>
           </div>
         </div>}
         {req.status!=="pending"&&req.note&&<div style={{marginTop:12,background:"#fff8f0",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#666"}}><strong>Note:</strong> {req.note}</div>}
@@ -512,9 +539,20 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
   function submitRequest(){
     const req={id:Date.now(),date:formatDateKey(selectedDate),time:selectedTime,distance,hours,parentName,parentEmail,parentPhone,parentAddress,children,additionalInfo,status:"pending",note:"",submittedAt:new Date().toISOString()};
     setRequests([...requests,req]);
-    const sub=encodeURIComponent(`New Babysitting Request from ${parentName}`);
-    const bod=encodeURIComponent(`New request!\n\nDate: ${formatDateDisplay(formatDateKey(selectedDate))}\nTime: ${selectedTime}\nHours: ${hours}\nDistance: ${distance}\nAddress: ${parentAddress}\nParent: ${parentName}\nEmail: ${parentEmail}\nPhone: ${parentPhone}\nChildren: ${children.length}\n\nLog into your admin panel to review and respond.`);
-    window.open(`mailto:${contact.email}?subject=${sub}&body=${bod}`,"_blank");
+    // Send email to Ella automatically via EmailJS
+    sendEmailToElla({
+      parent_name: parentName,
+      parent_email: parentEmail,
+      parent_phone: parentPhone,
+      date: formatDateDisplay(formatDateKey(selectedDate)),
+      time: selectedTime,
+      hours: hours,
+      address: parentAddress,
+      distance: distance,
+      num_children: children.length,
+      notes: additionalInfo || "None",
+      name: parentName,
+    }).catch(err => console.error("EmailJS error:", err));
     setStep(5);
   }
 
@@ -593,7 +631,7 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
           <FF label="Age *" error={errors[`age_${i}`]}><select value={child.age} onChange={e=>updateChild(i,"age",e.target.value)} style={S.input}><option value="">Select age...</option>{AGE_OPTIONS.map(a=><option key={a} value={a}>{a}</option>)}</select></FF>
           <FF label="Special Needs (if any)"><input value={child.specialNeeds} onChange={e=>updateChild(i,"specialNeeds",e.target.value)} style={S.input} placeholder="e.g. Autism, mobility needs..."/></FF>
           <FF label="Allergies *" error={errors[`allergies_${i}`]}><select value={child.allergies} onChange={e=>updateChild(i,"allergies",e.target.value)} style={S.input}><option value="">Select...</option><option value="none">No allergies</option><option value="food">Food allergies</option><option value="environmental">Environmental allergies</option><option value="medication">Medication allergies</option><option value="multiple">Multiple allergies</option></select></FF>
-          {child.allergies&&child.allergies!=="none"&&<FF label="EpiPen Available? *" error={errors[`epipen_${i}`]}><select value={child.epipen} onChange={e=>updateChild(i,"epipen",e.target.value)} style={S.input}><option value="">Select...</option><option value="yes_available">Yes — EpiPen will be available</option><option value="no_not_needed">No — not needed for these allergies</option><option value="yes_needed">Yes — EpiPen is required</option></select></FF>}
+          {child.allergies&&child.allergies!=="none"&&<FF label="Severity *" error={errors[`epipen_${i}`]}><select value={child.epipen} onChange={e=>updateChild(i,"epipen",e.target.value)} style={S.input}><option value="">Select...</option><option value="severe_epipen">Severe — EpiPen available</option><option value="no_not_needed">No — not needed for this allergy</option></select></FF>}
         </div>
         <FF label="Additional Information for This Child" style={{marginTop:12}}><textarea value={child.additionalInfo} onChange={e=>updateChild(i,"additionalInfo",e.target.value)} placeholder="Bedtime routines, favourites, fears, medications, dietary needs..." style={{...S.input,minHeight:80,resize:"vertical"}}/></FF>
       </div>)}
@@ -609,7 +647,7 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}><Inf label="Name" value={parentName}/><Inf label="Email" value={parentEmail}/><Inf label="Phone" value={parentPhone}/><Inf label="Address" value={parentAddress}/></div>
       <div style={{fontWeight:700,color:"#2d1b4e",marginBottom:10}}>{children.length} Child{children.length>1?"ren":""}:</div>
-      {children.map((c,i)=><div key={i} style={{background:"#f8f9fa",borderRadius:8,padding:"10px 14px",marginBottom:8,fontSize:14}}><strong>Child {i+1}:</strong> Age {c.age} · Allergies: {c.allergies==="none"?"None":c.allergies}{c.allergies!=="none"&&c.epipen?` · EpiPen: ${c.epipen}`:""}{c.specialNeeds?` · Needs: ${c.specialNeeds}`:""}</div>)}
+      {children.map((c,i)=><div key={i} style={{background:"#f8f9fa",borderRadius:8,padding:"10px 14px",marginBottom:8,fontSize:14}}><strong>Child {i+1}:</strong> Age {c.age} · Allergies: {c.allergies==="none"?"None":c.allergies}{c.allergies!=="none"&&c.epipen?` · Severity: ${c.epipen==="severe_epipen"?"Severe — EpiPen available":"Not needed"}`:""}{c.specialNeeds?` · Needs: ${c.specialNeeds}`:""}</div>)}
       <div style={{background:"#fffbea",border:"1px solid #fce88a",borderRadius:10,padding:"14px 18px",marginBottom:20,fontSize:14,color:"#7a6000"}}><strong>⏱ Please note:</strong> {contact.name||"Ella"} will review your request and get back to you <strong>within 48 hours</strong>. This is a request, not a confirmed booking.</div>
       <div style={{display:"flex",justifyContent:"space-between"}}><button onClick={()=>setStep(3)} style={S.btnO}>← Edit</button><button onClick={submitRequest} style={{...S.btnG,fontSize:16,padding:"12px 32px"}}>Submit Request ✓</button></div>
     </div>}

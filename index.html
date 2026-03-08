@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Ella's Babysitting Services</title>
+  <title>Ella Babysitting Services</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -16,971 +16,604 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState } = React;
 
 
-// ─── Persistent storage helpers ───────────────────────────────────────────────
 const STORAGE_KEYS = {
-  BIO: "ella_bio",
-  CREDENTIALS: "ella_credentials",
-  RATES: "ella_rates",
-  AVAILABILITY: "ella_availability",
-  REQUESTS: "ella_requests",
-  CONTACT: "ella_contact",
-  PAYMENT_EMAIL: "ella_payment_email",
+  BIO: "ella_bio", CREDENTIALS: "ella_credentials", RATES: "ella_rates",
+  AVAILABILITY: "ella_availability", REQUESTS: "ella_requests",
+  CONTACT: "ella_contact", PAYMENT_EMAIL: "ella_payment_email",
+  CONFIRM_TEMPLATE: "ella_confirm_template", DECLINE_TEMPLATE: "ella_decline_template",
 };
 
-const DEFAULT_BIO =
-  "Hi! I'm Ella, a responsible and caring babysitter with over 3 years of experience looking after children of all ages. I'm CPR certified, first-aid trained, and genuinely love spending time with kids. Whether it's homework help, outdoor play, or bedtime routines — I've got it covered. I look forward to meeting your family!";
-
+const DEFAULT_BIO = "Hi! I'm Ella, a responsible and caring babysitter with over 3 years of experience looking after children of all ages. I'm CPR certified, first-aid trained, and genuinely love spending time with kids. Whether it's homework help, outdoor play, or bedtime routines — I've got it covered. I look forward to meeting your family!";
 const DEFAULT_CREDENTIALS = [
   { id: 1, title: "CPR & First Aid Certified", issuer: "Canadian Red Cross", year: "2024" },
   { id: 2, title: "Standard First Aid", issuer: "St. John Ambulance", year: "2023" },
   { id: 3, title: "Child Development Course", issuer: "Local Community College", year: "2023" },
   { id: 4, title: "Babysitting Course", issuer: "Canadian Red Cross", year: "2022" },
 ];
-
 const DEFAULT_RATES = [
   { id: 1, label: "1 Child", rate: "$15/hr" },
   { id: 2, label: "2 Children", rate: "$18/hr" },
   { id: 3, label: "3+ Children", rate: "$22/hr" },
   { id: 4, label: "Overnight", rate: "Contact for quote" },
 ];
-
 const DEFAULT_CONTACT = { name: "Ella", phone: "", email: "ella@example.com" };
 const DEFAULT_PAYMENT_EMAIL = "ella@example.com";
+const DEFAULT_CONFIRM_TEMPLATE = `Hi {parentName},
 
-function useStorage(key, defaultValue) {
-  const [value, setValue] = useState(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  });
-  const set = (v) => {
-    setValue(v);
-    try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
-  };
-  return [value, set];
-}
+Great news! I'm happy to confirm your babysitting session on {date} at {time}.
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function getToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
+Please feel free to reach me at {phone} if you have any questions before then. Looking forward to meeting your family!
 
-function addMonths(date, n) {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + n);
-  return d;
-}
+Payment via e-transfer after the session to: {paymentEmail}
 
-function formatDateKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
+See you soon!
+Ella`;
+const DEFAULT_DECLINE_TEMPLATE = `Hi {parentName},
 
-function formatDateDisplay(dateKey) {
-  const [y, m, d] = dateKey.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  return date.toLocaleDateString("en-CA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-}
+Thank you so much for reaching out! Unfortunately I'm not available on {date} at {time}.
 
-function getDaysInMonth(year, month) {
-  return new Date(year, month + 1, 0).getDate();
-}
+I hope you find the right care for your family. Please don't hesitate to check my availability for other dates!
 
-function getFirstDayOfMonth(year, month) {
-  return new Date(year, month, 1).getDay();
-}
+Best,
+Ella`;
 
+const ADMIN_PASSWORD = "ella2024";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-
-// ─── ADMIN PANEL ──────────────────────────────────────────────────────────────
-const ADMIN_PASSWORD = "ella2024";
-
-function AdminPanel({ onExit, bio, setBio, credentials, setCredentials, rates, setRates,
-  availability, setAvailability, requests, setRequests, contact, setContact, paymentEmail, setPaymentEmail }) {
-
-  const [tab, setTab] = useState("availability");
-  const [editBio, setEditBio] = useState(bio);
-  const [editContact, setEditContact] = useState({ ...contact });
-  const [editPayment, setEditPayment] = useState(paymentEmail);
-  const [calYear, setCalYear] = useState(getToday().getFullYear());
-  const [calMonth, setCalMonth] = useState(getToday().getMonth());
-  const [selectedDay, setSelectedDay] = useState(null);
-  const [newSlot, setNewSlot] = useState("");
-  const [replyText, setReplyText] = useState({});
-  const [saved, setSaved] = useState("");
-
-  const today = getToday();
-  const maxDate = addMonths(today, 2);
-
-  function saveMsg(msg) { setSaved(msg); setTimeout(() => setSaved(""), 2500); }
-
-  // availability
-  const dayKey = selectedDay ? formatDateKey(selectedDay) : null;
-  const daySlots = dayKey ? (availability[dayKey] || []) : [];
-
-  function toggleMonth(dir) {
-    let m = calMonth + dir, y = calYear;
-    if (m > 11) { m = 0; y++; }
-    if (m < 0) { m = 11; y--; }
-    setCalMonth(m); setCalYear(y);
-  }
-
-  function isDaySelectable(year, month, day) {
-    const d = new Date(year, month, day);
-    d.setHours(0,0,0,0);
-    return d >= today && d <= maxDate;
-  }
-
-  function addSlot() {
-    if (!newSlot || !dayKey) return;
-    const updated = { ...availability, [dayKey]: [...(availability[dayKey] || []), newSlot].sort() };
-    setAvailability(updated);
-    setNewSlot("");
-    saveMsg("Slot added!");
-  }
-
-  function removeSlot(slot) {
-    const slots = (availability[dayKey] || []).filter(s => s !== slot);
-    const updated = { ...availability };
-    if (slots.length === 0) delete updated[dayKey];
-    else updated[dayKey] = slots;
-    setAvailability(updated);
-  }
-
-  function clearDay() {
-    const updated = { ...availability };
-    delete updated[dayKey];
-    setAvailability(updated);
-    saveMsg("Day cleared!");
-  }
-
-  // requests
-  function updateRequest(id, status, note) {
-    const updated = requests.map(r => r.id === id ? { ...r, status, note: note || r.note } : r);
-    setRequests(updated);
-    saveMsg("Request updated!");
-  }
-
-  const pending = requests.filter(r => r.status === "pending");
-  const past = requests.filter(r => r.status !== "pending");
-
-  function renderCalendar() {
-    const daysInMonth = getDaysInMonth(calYear, calMonth);
-    const firstDay = getFirstDayOfMonth(calYear, calMonth);
-    const cells = [];
-    for (let i = 0; i < firstDay; i++) cells.push(null);
-    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-    const dk = selectedDay ? formatDateKey(selectedDay) : null;
-    return (
-      <div>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-          <button onClick={() => toggleMonth(-1)} style={styles.navBtn}>‹</button>
-          <span style={{ fontWeight:700, fontSize:16, color:"#1a3a2a" }}>{MONTHS[calMonth]} {calYear}</span>
-          <button onClick={() => toggleMonth(1)} style={styles.navBtn}>›</button>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, marginBottom:8 }}>
-          {DAYS.map(d => <div key={d} style={{ textAlign:"center", fontSize:11, fontWeight:700, color:"#6b8f71", padding:"4px 0" }}>{d}</div>)}
-          {cells.map((day, i) => {
-            if (!day) return <div key={`e${i}`} />;
-            const d = new Date(calYear, calMonth, day); d.setHours(0,0,0,0);
-            const key = formatDateKey(d);
-            const selectable = isDaySelectable(calYear, calMonth, day);
-            const hasSlots = !!(availability[key]?.length);
-            const isSel = dk === key;
-            return (
-              <button key={key} onClick={() => selectable && setSelectedDay(d)}
-                style={{
-                  ...styles.calDay,
-                  background: isSel ? "#2d7a4f" : hasSlots ? "#d4edda" : selectable ? "#f8f9fa" : "#f0f0f0",
-                  color: isSel ? "#fff" : selectable ? "#1a3a2a" : "#bbb",
-                  cursor: selectable ? "pointer" : "default",
-                  fontWeight: hasSlots ? 700 : 400,
-                  border: hasSlots && !isSel ? "2px solid #2d7a4f" : "2px solid transparent",
-                }}>
-                {day}
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ fontSize:12, color:"#6b8f71", display:"flex", gap:12, flexWrap:"wrap" }}>
-          <span><span style={{ display:"inline-block", width:12, height:12, background:"#d4edda", border:"2px solid #2d7a4f", borderRadius:3, marginRight:4 }}/>Has slots</span>
-          <span><span style={{ display:"inline-block", width:12, height:12, background:"#2d7a4f", borderRadius:3, marginRight:4 }}/>Selected</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ minHeight:"100vh", background:"#f4f7f5", fontFamily:"'Georgia', serif" }}>
-      <div style={{ background:"#1a3a2a", color:"#fff", padding:"16px 32px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div>
-          <div style={{ fontSize:11, letterSpacing:3, textTransform:"uppercase", color:"#6fcf97", marginBottom:2 }}>Admin Panel</div>
-          <div style={{ fontSize:20, fontWeight:700 }}>Ella's Dashboard</div>
-        </div>
-        <button onClick={onExit} style={{ background:"rgba(255,255,255,0.15)", border:"none", color:"#fff", padding:"8px 18px", borderRadius:8, cursor:"pointer", fontSize:14 }}>← Back to Site</button>
-      </div>
-
-      {saved && <div style={{ background:"#2d7a4f", color:"#fff", textAlign:"center", padding:"10px", fontSize:14, fontWeight:600 }}>✓ {saved}</div>}
-
-      <div style={{ display:"flex", gap:0, borderBottom:"2px solid #dde8e0", background:"#fff", paddingLeft:32 }}>
-        {[["availability","📅 Availability"],["requests","📬 Requests" + (pending.length ? ` (${pending.length})` : "")],["bio","✏️ Bio & Info"],["credentials","🏅 Credentials"],["rates","💰 Rates"]].map(([key,label]) => (
-          <button key={key} onClick={() => setTab(key)} style={{
-            background: "none", border:"none", padding:"14px 20px", cursor:"pointer",
-            fontSize:14, fontWeight: tab===key ? 700 : 400,
-            color: tab===key ? "#2d7a4f" : "#666",
-            borderBottom: tab===key ? "3px solid #2d7a4f" : "3px solid transparent",
-            marginBottom:-2,
-          }}>{label}</button>
-        ))}
-      </div>
-
-      <div style={{ maxWidth:900, margin:"0 auto", padding:"32px 20px" }}>
-
-        {/* AVAILABILITY TAB */}
-        {tab === "availability" && (
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:24 }}>
-            <div style={styles.card}>
-              <h3 style={styles.cardTitle}>Select a Day</h3>
-              <p style={{ fontSize:13, color:"#6b8f71", marginBottom:16 }}>Click a date within the next 2 months to manage time slots.</p>
-              {renderCalendar()}
-            </div>
-            <div style={styles.card}>
-              <h3 style={styles.cardTitle}>
-                {selectedDay ? formatDateDisplay(dayKey) : "← Pick a day"}
-              </h3>
-              {!selectedDay && <p style={{ color:"#999", fontSize:14 }}>Select a date on the calendar to add or remove available time slots.</p>}
-              {selectedDay && (
-                <>
-                  <div style={{ marginBottom:16 }}>
-                    <div style={{ fontSize:13, fontWeight:700, color:"#1a3a2a", marginBottom:8 }}>Current Slots:</div>
-                    {daySlots.length === 0 && <p style={{ color:"#aaa", fontSize:13 }}>No slots yet.</p>}
-                    {daySlots.map(slot => (
-                      <div key={slot} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#f0f7f3", borderRadius:8, padding:"8px 12px", marginBottom:6 }}>
-                        <span style={{ fontWeight:600, color:"#2d7a4f" }}>{slot}</span>
-                        <button onClick={() => removeSlot(slot)} style={{ background:"#ffebeb", border:"none", color:"#d9534f", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:12 }}>Remove</button>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display:"flex", gap:8 }}>
-                    <input type="time" value={newSlot} onChange={e => setNewSlot(e.target.value)}
-                      style={{ flex:1, padding:"10px", border:"1px solid #c8dcd0", borderRadius:8, fontSize:15 }} />
-                    <button onClick={addSlot} style={styles.btnGreen}>Add</button>
-                  </div>
-                  {daySlots.length > 0 && <button onClick={clearDay} style={{ ...styles.btnOutline, marginTop:12, width:"100%" }}>Clear All Slots for This Day</button>}
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* REQUESTS TAB */}
-        {tab === "requests" && (
-          <div>
-            <h3 style={styles.sectionTitle}>Pending Requests</h3>
-            {pending.length === 0 && <div style={{ ...styles.card, color:"#999", textAlign:"center", padding:32 }}>No pending requests.</div>}
-            {pending.map(req => <RequestCard key={req.id} req={req} onUpdate={updateRequest} replyText={replyText} setReplyText={setReplyText} />)}
-            {past.length > 0 && <>
-              <h3 style={{ ...styles.sectionTitle, marginTop:32 }}>Past Requests</h3>
-              {past.map(req => <RequestCard key={req.id} req={req} onUpdate={updateRequest} replyText={replyText} setReplyText={setReplyText} />)}
-            </>}
-          </div>
-        )}
-
-        {/* BIO TAB */}
-        {tab === "bio" && (
-          <div style={{ display:"grid", gap:20 }}>
-            <div style={styles.card}>
-              <h3 style={styles.cardTitle}>Your Bio</h3>
-              <textarea value={editBio} onChange={e => setEditBio(e.target.value)}
-                style={{ width:"100%", minHeight:160, padding:14, border:"1px solid #c8dcd0", borderRadius:10, fontSize:15, lineHeight:1.6, fontFamily:"Georgia, serif", boxSizing:"border-box", resize:"vertical" }} />
-              <button onClick={() => { setBio(editBio); saveMsg("Bio saved!"); }} style={{ ...styles.btnGreen, marginTop:12 }}>Save Bio</button>
-            </div>
-            <div style={styles.card}>
-              <h3 style={styles.cardTitle}>Contact Info</h3>
-              {["name","phone","email"].map(field => (
-                <div key={field} style={{ marginBottom:14 }}>
-                  <label style={styles.label}>{field.charAt(0).toUpperCase()+field.slice(1)}</label>
-                  <input value={editContact[field]} onChange={e => setEditContact({ ...editContact, [field]: e.target.value })}
-                    style={styles.input} placeholder={field === "phone" ? "e.g. (613) 555-1234" : ""} />
-                </div>
-              ))}
-              <button onClick={() => { setContact(editContact); saveMsg("Contact info saved!"); }} style={styles.btnGreen}>Save Contact</button>
-            </div>
-            <div style={styles.card}>
-              <h3 style={styles.cardTitle}>E-Transfer Payment Email</h3>
-              <p style={{ fontSize:13, color:"#6b8f71", marginBottom:12 }}>This is the email shown to parents for sending e-transfers.</p>
-              <input value={editPayment} onChange={e => setEditPayment(e.target.value)} style={styles.input} />
-              <button onClick={() => { setPaymentEmail(editPayment); saveMsg("Payment email saved!"); }} style={{ ...styles.btnGreen, marginTop:12 }}>Save</button>
-            </div>
-          </div>
-        )}
-
-        {/* CREDENTIALS TAB */}
-        {tab === "credentials" && (
-          <div style={styles.card}>
-            <h3 style={styles.cardTitle}>Credentials & Certifications</h3>
-            {credentials.map((c, i) => (
-              <div key={c.id} style={{ display:"grid", gridTemplateColumns:"2fr 2fr 1fr auto", gap:8, marginBottom:10, alignItems:"center" }}>
-                <input value={c.title} onChange={e => { const n=[...credentials]; n[i]={...n[i],title:e.target.value}; setCredentials(n); }} style={styles.input} placeholder="Title" />
-                <input value={c.issuer} onChange={e => { const n=[...credentials]; n[i]={...n[i],issuer:e.target.value}; setCredentials(n); }} style={styles.input} placeholder="Issuer" />
-                <input value={c.year} onChange={e => { const n=[...credentials]; n[i]={...n[i],year:e.target.value}; setCredentials(n); }} style={styles.input} placeholder="Year" />
-                <button onClick={() => setCredentials(credentials.filter((_,j)=>j!==i))} style={{ background:"#ffebeb", border:"none", color:"#d9534f", borderRadius:6, padding:"6px 10px", cursor:"pointer" }}>✕</button>
-              </div>
-            ))}
-            <div style={{ display:"flex", gap:10, marginTop:12 }}>
-              <button onClick={() => setCredentials([...credentials, { id:Date.now(), title:"", issuer:"", year:"" }])} style={styles.btnOutline}>+ Add Credential</button>
-              <button onClick={() => saveMsg("Credentials saved!")} style={styles.btnGreen}>Save All</button>
-            </div>
-          </div>
-        )}
-
-        {/* RATES TAB */}
-        {tab === "rates" && (
-          <div style={styles.card}>
-            <h3 style={styles.cardTitle}>Rates</h3>
-            {rates.map((r, i) => (
-              <div key={r.id} style={{ display:"grid", gridTemplateColumns:"2fr 1fr auto", gap:8, marginBottom:10, alignItems:"center" }}>
-                <input value={r.label} onChange={e => { const n=[...rates]; n[i]={...n[i],label:e.target.value}; setRates(n); }} style={styles.input} placeholder="Label (e.g. 1 Child)" />
-                <input value={r.rate} onChange={e => { const n=[...rates]; n[i]={...n[i],rate:e.target.value}; setRates(n); }} style={styles.input} placeholder="Rate (e.g. $15/hr)" />
-                <button onClick={() => setRates(rates.filter((_,j)=>j!==i))} style={{ background:"#ffebeb", border:"none", color:"#d9534f", borderRadius:6, padding:"6px 10px", cursor:"pointer" }}>✕</button>
-              </div>
-            ))}
-            <div style={{ display:"flex", gap:10, marginTop:12 }}>
-              <button onClick={() => setRates([...rates, { id:Date.now(), label:"", rate:"" }])} style={styles.btnOutline}>+ Add Rate</button>
-              <button onClick={() => saveMsg("Rates saved!")} style={styles.btnGreen}>Save All</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RequestCard({ req, onUpdate, replyText, setReplyText }) {
-  const [open, setOpen] = useState(req.status === "pending");
-  const reply = replyText[req.id] || "";
-
-  const statusColor = req.status === "confirmed" ? "#2d7a4f" : req.status === "declined" ? "#d9534f" : "#e8a020";
-  const statusLabel = req.status === "confirmed" ? "✓ Confirmed" : req.status === "declined" ? "✗ Declined" : "⏳ Pending";
-
-  return (
-    <div style={{ ...styles.card, marginBottom:16, borderLeft:`4px solid ${statusColor}` }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", cursor:"pointer" }} onClick={() => setOpen(!open)}>
-        <div>
-          <div style={{ fontWeight:700, fontSize:16, color:"#1a3a2a" }}>{req.parentName}</div>
-          <div style={{ fontSize:13, color:"#6b8f71" }}>{formatDateDisplay(req.date)} at {req.time} · {req.hours} hrs · {req.children.length} child{req.children.length > 1 ? "ren" : ""}</div>
-        </div>
-        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-          <span style={{ fontSize:12, fontWeight:700, color:statusColor, background:`${statusColor}22`, padding:"4px 10px", borderRadius:20 }}>{statusLabel}</span>
-          <span style={{ color:"#999" }}>{open ? "▲" : "▼"}</span>
-        </div>
-      </div>
-
-      {open && (
-        <div style={{ marginTop:16 }}>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
-            <Info label="Email" value={req.parentEmail} />
-            <Info label="Phone" value={req.parentPhone} />
-            <Info label="Distance Away" value={req.distance} />
-            <Info label="Hours Needed" value={req.hours} />
-          </div>
-
-          <div style={{ fontWeight:700, fontSize:14, color:"#1a3a2a", marginBottom:8 }}>Children:</div>
-          {req.children.map((child, i) => (
-            <div key={i} style={{ background:"#f0f7f3", borderRadius:8, padding:"10px 14px", marginBottom:8 }}>
-              <div style={{ fontWeight:700, marginBottom:4 }}>Child {i+1}: Age {child.age}</div>
-              {child.specialNeeds && <div style={{ fontSize:13, color:"#555" }}>Special needs: {child.specialNeeds}</div>}
-              <div style={{ fontSize:13, color: child.allergies !== "none" ? "#d9534f" : "#2d7a4f" }}>
-                Allergies: {child.allergies === "none" ? "None" : child.allergies}
-                {child.allergies !== "none" && child.epipen && ` · EpiPen: ${child.epipen}`}
-              </div>
-              {child.additionalInfo && <div style={{ fontSize:13, color:"#555" }}>Additional info: {child.additionalInfo}</div>}
-            </div>
-          ))}
-
-          {req.additionalInfo && <Info label="Additional Notes" value={req.additionalInfo} />}
-
-          {req.status === "pending" && (
-            <div style={{ marginTop:16, borderTop:"1px solid #dde8e0", paddingTop:16 }}>
-              <div style={{ fontWeight:700, fontSize:14, color:"#1a3a2a", marginBottom:8 }}>Respond:</div>
-              <textarea placeholder="Optional message to include with decline..." value={reply}
-                onChange={e => setReplyText({ ...replyText, [req.id]: e.target.value })}
-                style={{ width:"100%", padding:10, border:"1px solid #c8dcd0", borderRadius:8, fontSize:13, minHeight:70, boxSizing:"border-box", resize:"vertical", marginBottom:10 }} />
-              <div style={{ display:"flex", gap:10 }}>
-                <button onClick={() => onUpdate(req.id, "confirmed", "")} style={{ ...styles.btnGreen, flex:1 }}>✓ Confirm Booking</button>
-                <button onClick={() => onUpdate(req.id, "declined", reply)} style={{ background:"#d9534f", color:"#fff", border:"none", borderRadius:8, padding:"10px 20px", cursor:"pointer", flex:1, fontWeight:700 }}>✗ Decline</button>
-              </div>
-            </div>
-          )}
-          {req.status !== "pending" && req.note && (
-            <div style={{ marginTop:12, background:"#fff8f0", borderRadius:8, padding:"10px 14px", fontSize:13, color:"#666" }}>
-              <strong>Your note:</strong> {req.note}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Info({ label, value }) {
-  return (
-    <div style={{ fontSize:13 }}>
-      <span style={{ color:"#6b8f71", fontWeight:700 }}>{label}: </span>
-      <span style={{ color:"#1a3a2a" }}>{value || "—"}</span>
-    </div>
-  );
-}
-
-// ─── PUBLIC SITE ──────────────────────────────────────────────────────────────
-function PublicSite({ bio, credentials, rates, availability, requests, setRequests, contact, paymentEmail, setIsAdmin }) {
-  const [section, setSection] = useState("home");
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  const navItems = [
-    ["home", "Home"],
-    ["about", "About"],
-    ["credentials", "Credentials"],
-    ["rates", "Rates & Payment"],
-    ["booking", "Book Now"],
-  ];
-
-  return (
-    <div style={{ minHeight:"100vh", background:"#f9fbf9", fontFamily:"'Georgia', serif" }}>
-      {/* NAV */}
-      <nav style={{ background:"#fff", borderBottom:"1px solid #dde8e0", position:"sticky", top:0, zIndex:100 }}>
-        <div style={{ maxWidth:1100, margin:"0 auto", padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:64 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ width:38, height:38, background:"linear-gradient(135deg, #2d7a4f, #6fcf97)", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:900, fontSize:18 }}>E</div>
-            <div>
-              <div style={{ fontWeight:800, fontSize:17, color:"#1a3a2a", letterSpacing:.5 }}>{contact.name || "Ella"}'s Babysitting</div>
-              <div style={{ fontSize:11, color:"#6b8f71", letterSpacing:1.5, textTransform:"uppercase" }}>Professional Childcare</div>
-            </div>
-          </div>
-          <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-            {navItems.map(([key, label]) => (
-              <button key={key} onClick={() => { setSection(key); setMenuOpen(false); }}
-                style={{ background: section===key ? "#f0f7f3" : "none", border:"none", color: section===key ? "#2d7a4f" : "#555", fontWeight: section===key ? 700 : 400, padding:"8px 16px", borderRadius:8, cursor:"pointer", fontSize:14, fontFamily:"Georgia, serif" }}>
-                {label}
-              </button>
-            ))}
-            <button onClick={() => { const p = prompt("Admin password:"); if(p === ADMIN_PASSWORD) setIsAdmin(true); else if(p !== null) alert("Incorrect password."); }}
-              style={{ background:"none", border:"1px solid #c8dcd0", color:"#6b8f71", padding:"6px 14px", borderRadius:8, cursor:"pointer", fontSize:12, marginLeft:8 }}>⚙ Admin</button>
-          </div>
-        </div>
-      </nav>
-
-      <div style={{ maxWidth:1100, margin:"0 auto", padding:"40px 24px" }}>
-        {section === "home" && <HomePage contact={contact} setSection={setSection} />}
-        {section === "about" && <AboutPage bio={bio} contact={contact} />}
-        {section === "credentials" && <CredentialsPage credentials={credentials} />}
-        {section === "rates" && <RatesPage rates={rates} paymentEmail={paymentEmail} />}
-        {section === "booking" && <BookingPage availability={availability} requests={requests} setRequests={setRequests} contact={contact} paymentEmail={paymentEmail} />}
-      </div>
-
-      <footer style={{ background:"#1a3a2a", color:"rgba(255,255,255,0.6)", textAlign:"center", padding:"24px", fontSize:13, marginTop:60 }}>
-        <div style={{ color:"#fff", fontWeight:700, marginBottom:4 }}>{contact.name || "Ella"}'s Babysitting Services</div>
-        {contact.email && <div>{contact.email}</div>}
-        {contact.phone && <div>{contact.phone}</div>}
-        <div style={{ marginTop:8, fontSize:11 }}>© {new Date().getFullYear()} · All rights reserved</div>
-      </footer>
-    </div>
-  );
-}
-
-function HomePage({ contact, setSection }) {
-  return (
-    <div>
-      <div style={{ textAlign:"center", padding:"60px 0 40px" }}>
-        <div style={{ display:"inline-flex", width:100, height:100, background:"linear-gradient(135deg, #2d7a4f, #6fcf97)", borderRadius:"50%", alignItems:"center", justifyContent:"center", fontSize:48, marginBottom:24 }}>👶</div>
-        <h1 style={{ fontSize:48, fontWeight:900, color:"#1a3a2a", margin:"0 0 16px", lineHeight:1.1 }}>Safe, Caring &<br/>Professional Babysitting</h1>
-        <p style={{ fontSize:18, color:"#6b8f71", maxWidth:500, margin:"0 auto 32px", lineHeight:1.7 }}>
-          Trusted childcare in your home by {contact.name || "Ella"} — certified, experienced, and genuinely devoted to your children's wellbeing.
-        </p>
-        <button onClick={() => setSection("booking")} style={{ ...styles.btnGreen, fontSize:18, padding:"16px 40px", borderRadius:50 }}>Book a Session →</button>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:20, marginTop:40 }}>
-        {[["🏅","Certified","CPR, First Aid & Babysitting certifications from recognized institutions."],
-          ["❤️","Caring","Every child is treated with patience, warmth, and individual attention."],
-          ["📱","Responsive","Clear communication — always a reply within 48 hours, often sooner."]
-        ].map(([icon, title, desc]) => (
-          <div key={title} style={{ ...styles.card, textAlign:"center" }}>
-            <div style={{ fontSize:36, marginBottom:12 }}>{icon}</div>
-            <div style={{ fontWeight:800, fontSize:18, color:"#1a3a2a", marginBottom:8 }}>{title}</div>
-            <div style={{ fontSize:14, color:"#6b8f71", lineHeight:1.7 }}>{desc}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AboutPage({ bio, contact }) {
-  return (
-    <div style={{ maxWidth:780, margin:"0 auto" }}>
-      <SectionHeader title="About Me" subtitle={`A little about ${contact.name || "Ella"}`} />
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:32, alignItems:"start" }}>
-        <div style={{ ...styles.card, textAlign:"center" }}>
-          <div style={{ width:100, height:100, background:"linear-gradient(135deg, #2d7a4f, #6fcf97)", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:48, margin:"0 auto 16px" }}>😊</div>
-          <div style={{ fontWeight:800, fontSize:20, color:"#1a3a2a" }}>{contact.name || "Ella"}</div>
-          <div style={{ fontSize:13, color:"#6b8f71", marginTop:4 }}>Professional Babysitter</div>
-          {contact.phone && <div style={{ fontSize:13, color:"#2d7a4f", marginTop:8 }}>📱 {contact.phone}</div>}
-          {contact.email && <div style={{ fontSize:13, color:"#2d7a4f", marginTop:4 }}>✉️ {contact.email}</div>}
-        </div>
-        <div style={styles.card}>
-          <p style={{ fontSize:16, color:"#333", lineHeight:1.9, margin:0, whiteSpace:"pre-wrap" }}>{bio}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CredentialsPage({ credentials }) {
-  return (
-    <div style={{ maxWidth:780, margin:"0 auto" }}>
-      <SectionHeader title="Credentials" subtitle="Certifications & qualifications you can trust" />
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-        {credentials.map(c => (
-          <div key={c.id} style={{ ...styles.card, display:"flex", gap:16, alignItems:"flex-start" }}>
-            <div style={{ width:48, height:48, background:"linear-gradient(135deg, #2d7a4f22, #6fcf9733)", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>🏅</div>
-            <div>
-              <div style={{ fontWeight:800, fontSize:16, color:"#1a3a2a" }}>{c.title}</div>
-              <div style={{ fontSize:13, color:"#6b8f71", marginTop:3 }}>{c.issuer} · {c.year}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RatesPage({ rates, paymentEmail }) {
-  return (
-    <div style={{ maxWidth:780, margin:"0 auto" }}>
-      <SectionHeader title="Rates & Payment" subtitle="Transparent pricing, simple payment" />
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:32 }}>
-        {rates.map(r => (
-          <div key={r.id} style={{ ...styles.card, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <span style={{ fontWeight:700, fontSize:16, color:"#1a3a2a" }}>{r.label}</span>
-            <span style={{ fontWeight:900, fontSize:20, color:"#2d7a4f" }}>{r.rate}</span>
-          </div>
-        ))}
-      </div>
-      <div style={{ ...styles.card, background:"linear-gradient(135deg, #f0f7f3, #e8f5ee)", border:"2px solid #b2d8bf" }}>
-        <h3 style={{ fontWeight:800, fontSize:20, color:"#1a3a2a", marginTop:0 }}>💳 Payment via Interac E-Transfer</h3>
-        <p style={{ color:"#555", lineHeight:1.8, marginBottom:12 }}>
-          Payment is accepted via Interac e-transfer after the session is complete. Please send payment to:
-        </p>
-        <div style={{ background:"#fff", border:"2px solid #2d7a4f", borderRadius:12, padding:"16px 24px", display:"inline-block" }}>
-          <span style={{ fontWeight:900, fontSize:18, color:"#2d7a4f" }}>📧 {paymentEmail}</span>
-        </div>
-        <p style={{ fontSize:13, color:"#6b8f71", marginTop:12, marginBottom:0 }}>
-          Please include your name and the date of the session in the e-transfer message.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ─── BOOKING PAGE ─────────────────────────────────────────────────────────────
 const DISTANCE_OPTIONS = ["Less than 5 minutes away","5–15 minutes away","15–30 minutes away","30–60 minutes away","Over 1 hour away"];
 const HOURS_OPTIONS = ["1–2 hours","2–3 hours","3–4 hours","4–5 hours","5–6 hours","6–8 hours","8+ hours"];
 const AGE_OPTIONS = ["Under 1 year","1 year","2 years","3 years","4 years","5 years","6 years","7 years","8 years","9 years","10 years","11 years","12 years","13+ years"];
 
-function emptyChild() {
-  return { age: "", specialNeeds: "", allergies: "", epipen: "", additionalInfo: "" };
+function getToday() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth()+n); return d; }
+function formatDateKey(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
+function formatDateDisplay(dateKey) { const [y,m,d]=dateKey.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString("en-CA",{weekday:"long",year:"numeric",month:"long",day:"numeric"}); }
+function getDaysInMonth(y,m) { return new Date(y,m+1,0).getDate(); }
+function getFirstDayOfMonth(y,m) { return new Date(y,m,1).getDay(); }
+function emptyChild() { return {age:"",specialNeeds:"",allergies:"",epipen:"",additionalInfo:""}; }
+
+function useStorage(key, def) {
+  const [v, setV] = useState(() => { try { const s=localStorage.getItem(key); return s?JSON.parse(s):def; } catch { return def; } });
+  const set = (val) => { setV(val); try { localStorage.setItem(key,JSON.stringify(val)); } catch {} };
+  return [v, set];
 }
 
-function BookingPage({ availability, requests, setRequests, contact, paymentEmail }) {
-  const [step, setStep] = useState(1); // 1=pick date/time, 2=parent info, 3=children, 4=confirm, 5=done
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedTime, setSelectedTime] = useState("");
-  const [distance, setDistance] = useState("");
-  const [hours, setHours] = useState("");
-  const [parentName, setParentName] = useState("");
-  const [parentEmail, setParentEmail] = useState("");
-  const [parentPhone, setParentPhone] = useState("");
-  const [numKids, setNumKids] = useState(1);
-  const [children, setChildren] = useState([emptyChild()]);
-  const [additionalInfo, setAdditionalInfo] = useState("");
-  const [errors, setErrors] = useState({});
-  const [calYear, setCalYear] = useState(getToday().getFullYear());
-  const [calMonth, setCalMonth] = useState(getToday().getMonth());
+function fillTemplate(template, vars) {
+  return template
+    .replace(/{parentName}/g, vars.parentName || "")
+    .replace(/{date}/g, vars.date || "")
+    .replace(/{time}/g, vars.time || "")
+    .replace(/{phone}/g, vars.phone || "")
+    .replace(/{paymentEmail}/g, vars.paymentEmail || "");
+}
 
-  const today = getToday();
-  const maxDate = addMonths(today, 2);
+const S = {
+  card: {background:"#fff",borderRadius:16,padding:24,boxShadow:"0 2px 16px rgba(0,0,0,0.06)",border:"1px solid #eef2ee"},
+  cardTitle: {fontWeight:800,fontSize:20,color:"#1a3a2a",marginTop:0,marginBottom:20},
+  label: {display:"block",fontSize:13,fontWeight:700,color:"#555",marginBottom:6},
+  input: {width:"100%",padding:"10px 14px",border:"1px solid #c8dcd0",borderRadius:10,fontSize:15,fontFamily:"Georgia,serif",boxSizing:"border-box",background:"#fafcfb"},
+  btnG: {background:"linear-gradient(135deg,#2d7a4f,#3a9d6b)",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",cursor:"pointer",fontWeight:700,fontSize:15,fontFamily:"Georgia,serif"},
+  btnO: {background:"#fff",color:"#2d7a4f",border:"2px solid #2d7a4f",borderRadius:10,padding:"10px 24px",cursor:"pointer",fontWeight:700,fontSize:14,fontFamily:"Georgia,serif"},
+  navBtn: {background:"#f0f7f3",border:"none",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:18,color:"#2d7a4f",fontWeight:700},
+  calDay: {aspectRatio:"1",borderRadius:8,border:"2px solid transparent",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:1},
+};
 
-  function updateKids(n) {
-    setNumKids(n);
-    setChildren(Array.from({ length: n }, (_, i) => children[i] || emptyChild()));
-  }
+function FF({label,children,error,style}) {
+  return <div style={{marginBottom:4,...style}}><label style={S.label}>{label}</label>{children}{error&&<div style={{fontSize:12,color:"#d9534f",marginTop:4}}>⚠ {error}</div>}</div>;
+}
+function Inf({label,value}) {
+  return <div style={{fontSize:13}}><span style={{color:"#6b8f71",fontWeight:700}}>{label}: </span><span style={{color:"#1a3a2a"}}>{value||"—"}</span></div>;
+}
+function SH({title,subtitle}) {
+  return <div style={{marginBottom:36,textAlign:"center"}}><h2 style={{fontSize:36,fontWeight:900,color:"#1a3a2a",margin:"0 0 8px"}}>{title}</h2><div style={{width:48,height:4,background:"#2d7a4f",borderRadius:2,margin:"0 auto 12px"}}/>{subtitle&&<p style={{fontSize:16,color:"#6b8f71",margin:0}}>{subtitle}</p>}</div>;
+}
 
-  function updateChild(i, field, val) {
-    const c = [...children];
-    c[i] = { ...c[i], [field]: val };
-    setChildren(c);
-  }
-
-  function toggleMonth(dir) {
-    let m = calMonth + dir, y = calYear;
-    if (m > 11) { m = 0; y++; }
-    if (m < 0) { m = 11; y--; }
-    setCalMonth(m); setCalYear(y);
-  }
-
-  function isDayAvailable(year, month, day) {
-    const d = new Date(year, month, day); d.setHours(0,0,0,0);
-    if (d < today || d > maxDate) return false;
-    const key = formatDateKey(d);
-    return !!(availability[key]?.length);
-  }
-
-  function validateStep2() {
-    const e = {};
-    if (!parentName.trim()) e.parentName = "Name is required";
-    if (!parentEmail.trim() || !parentEmail.includes("@")) e.parentEmail = "Valid email required";
-    if (!parentPhone.trim()) e.parentPhone = "Phone number is required";
-    if (!distance) e.distance = "Please select how far away you'll be";
-    if (!hours) e.hours = "Please select approximate hours";
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  }
-
-  function validateStep3() {
-    const e = {};
-    children.forEach((c, i) => {
-      if (!c.age) e[`age_${i}`] = "Age is required";
-      if (!c.allergies) e[`allergies_${i}`] = "Please specify allergies status";
-      if (c.allergies && c.allergies !== "none" && !c.epipen) e[`epipen_${i}`] = "Please specify EpiPen availability";
-    });
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  }
-
-  function submitRequest() {
-    const req = {
-      id: Date.now(),
-      date: formatDateKey(selectedDate),
-      time: selectedTime,
-      distance, hours,
-      parentName, parentEmail, parentPhone,
-      children,
-      additionalInfo,
-      status: "pending",
-      note: "",
-      submittedAt: new Date().toISOString(),
-    };
-    setRequests([...requests, req]);
-    // Trigger email
-    const subject = encodeURIComponent(`New Babysitting Request from ${parentName}`);
-    const body = encodeURIComponent(
-      `New booking request!\n\nDate: ${formatDateDisplay(req.date)}\nTime: ${selectedTime}\nHours: ${hours}\nDistance: ${distance}\n\nParent: ${parentName}\nEmail: ${parentEmail}\nPhone: ${parentPhone}\n\nChildren: ${children.length}\n\nPlease log in to your admin panel to review and respond.`
+function CalGrid({calYear,calMonth,availability,selectedDate,onSelect,adminMode,bookedDates}) {
+  const today=getToday(), maxDate=addMonths(today,2);
+  const cells=[], first=getFirstDayOfMonth(calYear,calMonth), total=getDaysInMonth(calYear,calMonth);
+  for(let i=0;i<first;i++) cells.push(<div key={`e${i}`}/>);
+  for(let d=1;d<=total;d++){
+    const dd=new Date(calYear,calMonth,d); dd.setHours(0,0,0,0);
+    const key=formatDateKey(dd);
+    const inRange=dd>=today&&dd<=maxDate;
+    const hasSlots=!!(availability[key]?.length);
+    const isBooked=!!(bookedDates&&bookedDates[key]);
+    const avail=adminMode?inRange:(inRange&&hasSlots&&!isBooked);
+    const isSel=selectedDate&&formatDateKey(selectedDate)===key;
+    cells.push(
+      <button key={d} onClick={()=>avail&&onSelect(dd)} style={{
+        ...S.calDay,
+        background: isBooked?"#ffe0e0": isSel?"#2d7a4f": hasSlots&&inRange?"#d4edda": inRange?"#f8f9fa":"#f0f0f0",
+        color: isBooked?"#c0392b": isSel?"#fff": avail?"#1a3a2a":"#ccc",
+        cursor: avail?"pointer":"default",
+        fontWeight: (hasSlots||isBooked)?700:400,
+        border: isBooked?"2px solid #e74c3c": hasSlots&&!isSel&&inRange?"2px solid #2d7a4f":"2px solid transparent",
+        fontSize: isBooked?9:11,
+      }}>
+        <span>{d}</span>
+        {isBooked&&<span style={{fontSize:8,letterSpacing:0.5}}>BOOKED</span>}
+      </button>
     );
-    window.open(`mailto:${contact.email}?subject=${subject}&body=${body}`, "_blank");
+  }
+  return <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>{DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:"#6b8f71",padding:"4px 0"}}>{d}</div>)}{cells}</div>;
+}
+
+function RequestCard({req,onUpdate,replyText,setReplyText,confirmTemplate,declineTemplate,contact,paymentEmail}) {
+  const [open,setOpen]=useState(req.status==="pending");
+  const reply=replyText[req.id]||"";
+  const sc=req.status==="confirmed"?"#2d7a4f":req.status==="declined"?"#d9534f":"#e8a020";
+  const sl=req.status==="confirmed"?"✓ Confirmed":req.status==="declined"?"✗ Declined":"⏳ Pending";
+
+  function sendConfirm() {
+    const body = fillTemplate(confirmTemplate, {
+      parentName: req.parentName,
+      date: formatDateDisplay(req.date),
+      time: req.time,
+      phone: contact.phone,
+      paymentEmail: paymentEmail,
+    });
+    const subject = encodeURIComponent(`Babysitting Confirmed — ${formatDateDisplay(req.date)}`);
+    window.open(`mailto:${req.parentEmail}?subject=${subject}&body=${encodeURIComponent(body)}`, "_blank");
+    onUpdate(req.id, "confirmed", "");
+  }
+
+  function sendDecline() {
+    const body = fillTemplate(declineTemplate, {
+      parentName: req.parentName,
+      date: formatDateDisplay(req.date),
+      time: req.time,
+      phone: contact.phone,
+      paymentEmail: paymentEmail,
+    });
+    const subject = encodeURIComponent(`Re: Babysitting Request — ${formatDateDisplay(req.date)}`);
+    window.open(`mailto:${req.parentEmail}?subject=${subject}&body=${encodeURIComponent(body + (reply ? "\n\n" + reply : ""))}`, "_blank");
+    onUpdate(req.id, "declined", reply);
+  }
+
+  return (
+    <div style={{...S.card,marginBottom:16,borderLeft:`4px solid ${sc}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",cursor:"pointer"}} onClick={()=>setOpen(!open)}>
+        <div><div style={{fontWeight:700,fontSize:16,color:"#1a3a2a"}}>{req.parentName}</div><div style={{fontSize:13,color:"#6b8f71"}}>{formatDateDisplay(req.date)} at {req.time} · {req.hours} · {req.children.length} child{req.children.length>1?"ren":""}</div></div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:12,fontWeight:700,color:sc,background:`${sc}22`,padding:"4px 10px",borderRadius:20}}>{sl}</span><span style={{color:"#999"}}>{open?"▲":"▼"}</span></div>
+      </div>
+      {open&&<div style={{marginTop:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}><Inf label="Email" value={req.parentEmail}/><Inf label="Phone" value={req.parentPhone}/><Inf label="Distance" value={req.distance}/><Inf label="Hours" value={req.hours}/></div>
+        <div style={{fontWeight:700,fontSize:14,color:"#1a3a2a",marginBottom:8}}>Children:</div>
+        {req.children.map((c,i)=><div key={i} style={{background:"#f0f7f3",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
+          <div style={{fontWeight:700,marginBottom:4}}>Child {i+1}: Age {c.age}</div>
+          {c.specialNeeds&&<div style={{fontSize:13,color:"#555"}}>Special needs: {c.specialNeeds}</div>}
+          <div style={{fontSize:13,color:c.allergies!=="none"?"#d9534f":"#2d7a4f"}}>Allergies: {c.allergies==="none"?"None":c.allergies}{c.allergies!=="none"&&c.epipen?` · EpiPen: ${c.epipen}`:""}</div>
+          {c.additionalInfo&&<div style={{fontSize:13,color:"#555"}}>Notes: {c.additionalInfo}</div>}
+        </div>)}
+        {req.additionalInfo&&<Inf label="Additional Notes" value={req.additionalInfo}/>}
+        {req.status==="pending"&&<div style={{marginTop:16,borderTop:"1px solid #dde8e0",paddingTop:16}}>
+          <div style={{background:"#f0f7f3",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#555"}}>
+            <strong>Note:</strong> Clicking Confirm or Decline will open your email app with a pre-filled message to {req.parentName}. You can edit it before sending.
+          </div>
+          <FF label="Additional note to add to decline email (optional)">
+            <textarea value={reply} onChange={e=>setReplyText({...replyText,[req.id]:e.target.value})}
+              placeholder="e.g. I have a prior commitment that day..."
+              style={{...S.input,minHeight:60,resize:"vertical"}}/>
+          </FF>
+          <div style={{display:"flex",gap:10,marginTop:10}}>
+            <button onClick={sendConfirm} style={{...S.btnG,flex:1}}>✓ Confirm & Email Parent</button>
+            <button onClick={sendDecline} style={{background:"#d9534f",color:"#fff",border:"none",borderRadius:8,padding:"10px 20px",cursor:"pointer",flex:1,fontWeight:700}}>✗ Decline & Email Parent</button>
+          </div>
+        </div>}
+        {req.status!=="pending"&&req.note&&<div style={{marginTop:12,background:"#fff8f0",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#666"}}><strong>Note:</strong> {req.note}</div>}
+      </div>}
+    </div>
+  );
+}
+
+function AdminPanel({onExit,bio,setBio,credentials,setCredentials,rates,setRates,availability,setAvailability,requests,setRequests,contact,setContact,paymentEmail,setPaymentEmail,confirmTemplate,setConfirmTemplate,declineTemplate,setDeclineTemplate}) {
+  const [tab,setTab]=useState("availability");
+  const [editBio,setEditBio]=useState(bio);
+  const [editContact,setEditContact]=useState({...contact});
+  const [editPayment,setEditPayment]=useState(paymentEmail);
+  const [editConfirm,setEditConfirm]=useState(confirmTemplate);
+  const [editDecline,setEditDecline]=useState(declineTemplate);
+  const [calYear,setCalYear]=useState(getToday().getFullYear());
+  const [calMonth,setCalMonth]=useState(getToday().getMonth());
+  const [selectedDay,setSelectedDay]=useState(null);
+  const [newSlot,setNewSlot]=useState("");
+  const [replyText,setReplyText]=useState({});
+  const [saved,setSaved]=useState("");
+
+  function saveMsg(m){setSaved(m);setTimeout(()=>setSaved(""),2500);}
+  const dayKey=selectedDay?formatDateKey(selectedDay):null;
+  const daySlots=dayKey?(availability[dayKey]||[]):[];
+  function toggleMonth(dir){let m=calMonth+dir,y=calYear;if(m>11){m=0;y++;}if(m<0){m=11;y--;}setCalMonth(m);setCalYear(y);}
+  function addSlot(){if(!newSlot||!dayKey)return;setAvailability({...availability,[dayKey]:[...(availability[dayKey]||[]),newSlot].sort()});setNewSlot("");saveMsg("Slot added!");}
+  function removeSlot(slot){const sl=(availability[dayKey]||[]).filter(s=>s!==slot);const u={...availability};if(!sl.length)delete u[dayKey];else u[dayKey]=sl;setAvailability(u);}
+  function clearDay(){const u={...availability};delete u[dayKey];setAvailability(u);saveMsg("Day cleared!");}
+  function updateRequest(id,status,note){setRequests(requests.map(r=>r.id===id?{...r,status,note:note||r.note}:r));saveMsg("Updated!");}
+
+  // compute booked dates from confirmed requests
+  const bookedDates = {};
+  requests.forEach(r => { if(r.status==="confirmed") bookedDates[r.date]=true; });
+
+  const pending=requests.filter(r=>r.status==="pending");
+  const past=requests.filter(r=>r.status!=="pending");
+  const tabs=[["availability","📅 Availability"],["requests",`📬 Requests${pending.length?` (${pending.length})`:""}`],["bio","✏️ Bio & Info"],["templates","📧 Email Templates"],["credentials","🏅 Credentials"],["rates","💰 Rates"]];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f4f7f5",fontFamily:"Georgia,serif"}}>
+      <div style={{background:"#1a3a2a",color:"#fff",padding:"16px 32px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontSize:11,letterSpacing:3,textTransform:"uppercase",color:"#6fcf97",marginBottom:2}}>Admin Panel</div><div style={{fontSize:20,fontWeight:700}}>Ella's Dashboard</div></div>
+        <button onClick={onExit} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontSize:14}}>← Back to Site</button>
+      </div>
+      {saved&&<div style={{background:"#2d7a4f",color:"#fff",textAlign:"center",padding:"10px",fontSize:14,fontWeight:600}}>✓ {saved}</div>}
+      <div style={{display:"flex",borderBottom:"2px solid #dde8e0",background:"#fff",paddingLeft:32,overflowX:"auto"}}>
+        {tabs.map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{background:"none",border:"none",padding:"14px 16px",cursor:"pointer",fontSize:13,fontWeight:tab===k?700:400,color:tab===k?"#2d7a4f":"#666",borderBottom:tab===k?"3px solid #2d7a4f":"3px solid transparent",marginBottom:-2,whiteSpace:"nowrap"}}>{l}</button>)}
+      </div>
+      <div style={{maxWidth:900,margin:"0 auto",padding:"32px 20px"}}>
+
+        {tab==="availability"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+          <div style={S.card}>
+            <h3 style={S.cardTitle}>Select a Day</h3>
+            <p style={{fontSize:13,color:"#6b8f71",marginBottom:16}}>Click any date within the next 2 months to manage time slots.</p>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <button onClick={()=>toggleMonth(-1)} style={S.navBtn}>‹</button>
+              <span style={{fontWeight:700,color:"#1a3a2a"}}>{MONTHS[calMonth]} {calYear}</span>
+              <button onClick={()=>toggleMonth(1)} style={S.navBtn}>›</button>
+            </div>
+            <CalGrid calYear={calYear} calMonth={calMonth} availability={availability} selectedDate={selectedDay} onSelect={setSelectedDay} adminMode={true} bookedDates={bookedDates}/>
+            <div style={{fontSize:12,color:"#6b8f71",marginTop:8,display:"flex",gap:12,flexWrap:"wrap"}}>
+              <span><span style={{display:"inline-block",width:12,height:12,background:"#d4edda",border:"2px solid #2d7a4f",borderRadius:3,marginRight:4}}/>Available</span>
+              <span><span style={{display:"inline-block",width:12,height:12,background:"#ffe0e0",border:"2px solid #e74c3c",borderRadius:3,marginRight:4}}/>Booked</span>
+            </div>
+          </div>
+          <div style={S.card}>
+            <h3 style={S.cardTitle}>{selectedDay?formatDateDisplay(dayKey):"← Pick a day"}</h3>
+            {!selectedDay&&<p style={{color:"#aaa",fontSize:14}}>Select a date to manage time slots.</p>}
+            {selectedDay&&bookedDates[dayKey]&&<div style={{background:"#ffe0e0",borderRadius:8,padding:"12px 16px",color:"#c0392b",fontWeight:700,fontSize:14}}>🔒 This date is confirmed/booked.</div>}
+            {selectedDay&&!bookedDates[dayKey]&&<>
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#1a3a2a",marginBottom:8}}>Current Slots:</div>
+                {daySlots.length===0&&<p style={{color:"#aaa",fontSize:13}}>No slots yet.</p>}
+                {daySlots.map(slot=><div key={slot} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f0f7f3",borderRadius:8,padding:"8px 12px",marginBottom:6}}>
+                  <span style={{fontWeight:600,color:"#2d7a4f"}}>{slot}</span>
+                  <button onClick={()=>removeSlot(slot)} style={{background:"#ffebeb",border:"none",color:"#d9534f",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:12}}>Remove</button>
+                </div>)}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <input type="time" value={newSlot} onChange={e=>setNewSlot(e.target.value)} style={{flex:1,padding:"10px",border:"1px solid #c8dcd0",borderRadius:8,fontSize:15}}/>
+                <button onClick={addSlot} style={S.btnG}>Add</button>
+              </div>
+              {daySlots.length>0&&<button onClick={clearDay} style={{...S.btnO,marginTop:12,width:"100%"}}>Clear All Slots</button>}
+            </>}
+          </div>
+        </div>}
+
+        {tab==="requests"&&<div>
+          <h3 style={{fontWeight:800,fontSize:22,color:"#1a3a2a",marginBottom:16}}>Pending Requests</h3>
+          {pending.length===0&&<div style={{...S.card,color:"#999",textAlign:"center",padding:32}}>No pending requests.</div>}
+          {pending.map(r=><RequestCard key={r.id} req={r} onUpdate={updateRequest} replyText={replyText} setReplyText={setReplyText} confirmTemplate={confirmTemplate} declineTemplate={declineTemplate} contact={contact} paymentEmail={paymentEmail}/>)}
+          {past.length>0&&<><h3 style={{fontWeight:800,fontSize:22,color:"#1a3a2a",marginBottom:16,marginTop:32}}>Past Requests</h3>{past.map(r=><RequestCard key={r.id} req={r} onUpdate={updateRequest} replyText={replyText} setReplyText={setReplyText} confirmTemplate={confirmTemplate} declineTemplate={declineTemplate} contact={contact} paymentEmail={paymentEmail}/>)}</>}
+        </div>}
+
+        {tab==="bio"&&<div style={{display:"grid",gap:20}}>
+          <div style={S.card}>
+            <h3 style={S.cardTitle}>Your Bio</h3>
+            <textarea value={editBio} onChange={e=>setEditBio(e.target.value)} style={{width:"100%",minHeight:160,padding:14,border:"1px solid #c8dcd0",borderRadius:10,fontSize:15,lineHeight:1.6,fontFamily:"Georgia,serif",boxSizing:"border-box",resize:"vertical"}}/>
+            <button onClick={()=>{setBio(editBio);saveMsg("Bio saved!");}} style={{...S.btnG,marginTop:12}}>Save Bio</button>
+          </div>
+          <div style={S.card}>
+            <h3 style={S.cardTitle}>Contact Info</h3>
+            {["name","phone","email"].map(f=><div key={f} style={{marginBottom:14}}>
+              <label style={S.label}>{f.charAt(0).toUpperCase()+f.slice(1)}</label>
+              <input value={editContact[f]} onChange={e=>setEditContact({...editContact,[f]:e.target.value})} style={S.input} placeholder={f==="phone"?"e.g. (613) 555-1234":""}/>
+            </div>)}
+            <button onClick={()=>{setContact(editContact);saveMsg("Contact saved!");}} style={S.btnG}>Save Contact</button>
+          </div>
+          <div style={S.card}>
+            <h3 style={S.cardTitle}>E-Transfer Payment Email</h3>
+            <input value={editPayment} onChange={e=>setEditPayment(e.target.value)} style={S.input}/>
+            <button onClick={()=>{setPaymentEmail(editPayment);saveMsg("Saved!");}} style={{...S.btnG,marginTop:12}}>Save</button>
+          </div>
+        </div>}
+
+        {tab==="templates"&&<div style={{display:"grid",gap:20}}>
+          <div style={S.card}>
+            <h3 style={S.cardTitle}>📧 Confirmation Email Template</h3>
+            <p style={{fontSize:13,color:"#6b8f71",marginBottom:12}}>This email opens automatically when you confirm a booking. You can use <strong>{"{parentName}"}</strong>, <strong>{"{date}"}</strong>, <strong>{"{time}"}</strong>, <strong>{"{phone}"}</strong>, <strong>{"{paymentEmail}"}</strong> as placeholders.</p>
+            <textarea value={editConfirm} onChange={e=>setEditConfirm(e.target.value)} style={{width:"100%",minHeight:220,padding:14,border:"1px solid #c8dcd0",borderRadius:10,fontSize:14,lineHeight:1.7,fontFamily:"Georgia,serif",boxSizing:"border-box",resize:"vertical"}}/>
+            <button onClick={()=>{setConfirmTemplate(editConfirm);saveMsg("Confirmation template saved!");}} style={{...S.btnG,marginTop:12}}>Save Template</button>
+          </div>
+          <div style={S.card}>
+            <h3 style={S.cardTitle}>📧 Decline Email Template</h3>
+            <p style={{fontSize:13,color:"#6b8f71",marginBottom:12}}>This email opens automatically when you decline a booking. Same placeholders available.</p>
+            <textarea value={editDecline} onChange={e=>setEditDecline(e.target.value)} style={{width:"100%",minHeight:200,padding:14,border:"1px solid #c8dcd0",borderRadius:10,fontSize:14,lineHeight:1.7,fontFamily:"Georgia,serif",boxSizing:"border-box",resize:"vertical"}}/>
+            <button onClick={()=>{setDeclineTemplate(editDecline);saveMsg("Decline template saved!");}} style={{...S.btnG,marginTop:12}}>Save Template</button>
+          </div>
+        </div>}
+
+        {tab==="credentials"&&<div style={S.card}>
+          <h3 style={S.cardTitle}>Credentials</h3>
+          {credentials.map((c,i)=><div key={c.id} style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr auto",gap:8,marginBottom:10,alignItems:"center"}}>
+            <input value={c.title} onChange={e=>{const n=[...credentials];n[i]={...n[i],title:e.target.value};setCredentials(n);}} style={S.input} placeholder="Title"/>
+            <input value={c.issuer} onChange={e=>{const n=[...credentials];n[i]={...n[i],issuer:e.target.value};setCredentials(n);}} style={S.input} placeholder="Issuer"/>
+            <input value={c.year} onChange={e=>{const n=[...credentials];n[i]={...n[i],year:e.target.value};setCredentials(n);}} style={S.input} placeholder="Year"/>
+            <button onClick={()=>setCredentials(credentials.filter((_,j)=>j!==i))} style={{background:"#ffebeb",border:"none",color:"#d9534f",borderRadius:6,padding:"6px 10px",cursor:"pointer"}}>✕</button>
+          </div>)}
+          <div style={{display:"flex",gap:10,marginTop:12}}>
+            <button onClick={()=>setCredentials([...credentials,{id:Date.now(),title:"",issuer:"",year:""}])} style={S.btnO}>+ Add</button>
+            <button onClick={()=>saveMsg("Credentials saved!")} style={S.btnG}>Save All</button>
+          </div>
+        </div>}
+
+        {tab==="rates"&&<div style={S.card}>
+          <h3 style={S.cardTitle}>Rates</h3>
+          {rates.map((r,i)=><div key={r.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:8,marginBottom:10,alignItems:"center"}}>
+            <input value={r.label} onChange={e=>{const n=[...rates];n[i]={...n[i],label:e.target.value};setRates(n);}} style={S.input} placeholder="Label"/>
+            <input value={r.rate} onChange={e=>{const n=[...rates];n[i]={...n[i],rate:e.target.value};setRates(n);}} style={S.input} placeholder="Rate"/>
+            <button onClick={()=>setRates(rates.filter((_,j)=>j!==i))} style={{background:"#ffebeb",border:"none",color:"#d9534f",borderRadius:6,padding:"6px 10px",cursor:"pointer"}}>✕</button>
+          </div>)}
+          <div style={{display:"flex",gap:10,marginTop:12}}>
+            <button onClick={()=>setRates([...rates,{id:Date.now(),label:"",rate:""}])} style={S.btnO}>+ Add</button>
+            <button onClick={()=>saveMsg("Rates saved!")} style={S.btnG}>Save All</button>
+          </div>
+        </div>}
+
+      </div>
+    </div>
+  );
+}
+
+function HomePage({contact,setSection}) {
+  return <div>
+    <div style={{textAlign:"center",padding:"60px 0 40px"}}>
+      <div style={{display:"inline-flex",width:100,height:100,background:"linear-gradient(135deg,#2d7a4f,#6fcf97)",borderRadius:"50%",alignItems:"center",justifyContent:"center",fontSize:48,marginBottom:24}}>👶</div>
+      <h1 style={{fontSize:44,fontWeight:900,color:"#1a3a2a",margin:"0 0 16px",lineHeight:1.1}}>Safe, Caring &<br/>Professional Babysitting</h1>
+      <p style={{fontSize:18,color:"#6b8f71",maxWidth:500,margin:"0 auto 32px",lineHeight:1.7}}>Trusted childcare in your home by {contact.name||"Ella"} — certified, experienced, and genuinely devoted to your children's wellbeing.</p>
+      <button onClick={()=>setSection("booking")} style={{...S.btnG,fontSize:18,padding:"16px 40px",borderRadius:50}}>Book a Session →</button>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:20,marginTop:40}}>
+      {[["🏅","Certified","CPR, First Aid & Babysitting certifications from recognized institutions."],["❤️","Caring","Every child treated with patience, warmth, and individual attention."],["📱","Responsive","Clear communication — always a reply within 48 hours, often sooner."]].map(([icon,title,desc])=>(
+        <div key={title} style={{...S.card,textAlign:"center"}}>
+          <div style={{fontSize:36,marginBottom:12}}>{icon}</div>
+          <div style={{fontWeight:800,fontSize:18,color:"#1a3a2a",marginBottom:8}}>{title}</div>
+          <div style={{fontSize:14,color:"#6b8f71",lineHeight:1.7}}>{desc}</div>
+        </div>
+      ))}
+    </div>
+  </div>;
+}
+
+function AboutPage({bio,contact}) {
+  return <div style={{maxWidth:780,margin:"0 auto"}}>
+    <SH title="About Me" subtitle={`A little about ${contact.name||"Ella"}`}/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:32,alignItems:"start"}}>
+      <div style={{...S.card,textAlign:"center"}}>
+        <div style={{width:100,height:100,background:"linear-gradient(135deg,#2d7a4f,#6fcf97)",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:48,margin:"0 auto 16px"}}>😊</div>
+        <div style={{fontWeight:800,fontSize:20,color:"#1a3a2a"}}>{contact.name||"Ella"}</div>
+        <div style={{fontSize:13,color:"#6b8f71",marginTop:4}}>Professional Babysitter</div>
+        {contact.phone&&<div style={{fontSize:13,color:"#2d7a4f",marginTop:8}}>📱 {contact.phone}</div>}
+        {contact.email&&<div style={{fontSize:13,color:"#2d7a4f",marginTop:4}}>✉️ {contact.email}</div>}
+      </div>
+      <div style={S.card}><p style={{fontSize:16,color:"#333",lineHeight:1.9,margin:0,whiteSpace:"pre-wrap"}}>{bio}</p></div>
+    </div>
+  </div>;
+}
+
+function CredentialsPage({credentials}) {
+  return <div style={{maxWidth:780,margin:"0 auto"}}>
+    <SH title="Credentials" subtitle="Certifications & qualifications you can trust"/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      {credentials.map(c=><div key={c.id} style={{...S.card,display:"flex",gap:16,alignItems:"flex-start"}}>
+        <div style={{width:48,height:48,background:"linear-gradient(135deg,#2d7a4f22,#6fcf9733)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>🏅</div>
+        <div><div style={{fontWeight:800,fontSize:16,color:"#1a3a2a"}}>{c.title}</div><div style={{fontSize:13,color:"#6b8f71",marginTop:3}}>{c.issuer} · {c.year}</div></div>
+      </div>)}
+    </div>
+  </div>;
+}
+
+function RatesPage({rates,paymentEmail}) {
+  return <div style={{maxWidth:780,margin:"0 auto"}}>
+    <SH title="Rates & Payment" subtitle="Transparent pricing, simple payment"/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:32}}>
+      {rates.map(r=><div key={r.id} style={{...S.card,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontWeight:700,fontSize:16,color:"#1a3a2a"}}>{r.label}</span>
+        <span style={{fontWeight:900,fontSize:20,color:"#2d7a4f"}}>{r.rate}</span>
+      </div>)}
+    </div>
+    <div style={{...S.card,background:"linear-gradient(135deg,#f0f7f3,#e8f5ee)",border:"2px solid #b2d8bf"}}>
+      <h3 style={{fontWeight:800,fontSize:20,color:"#1a3a2a",marginTop:0}}>💳 Payment via Interac E-Transfer</h3>
+      <p style={{color:"#555",lineHeight:1.8,marginBottom:12}}>Payment accepted via e-transfer after the session. Please send to:</p>
+      <div style={{background:"#fff",border:"2px solid #2d7a4f",borderRadius:12,padding:"16px 24px",display:"inline-block"}}>
+        <span style={{fontWeight:900,fontSize:18,color:"#2d7a4f"}}>📧 {paymentEmail}</span>
+      </div>
+      <p style={{fontSize:13,color:"#6b8f71",marginTop:12,marginBottom:0}}>Please include your name and session date in the e-transfer message.</p>
+    </div>
+  </div>;
+}
+
+function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
+  const [step,setStep]=useState(1);
+  const [selectedDate,setSelectedDate]=useState(null);
+  const [selectedTime,setSelectedTime]=useState("");
+  const [distance,setDistance]=useState("");
+  const [hours,setHours]=useState("");
+  const [parentName,setParentName]=useState("");
+  const [parentEmail,setParentEmail]=useState("");
+  const [parentPhone,setParentPhone]=useState("");
+  const [numKids,setNumKids]=useState(1);
+  const [children,setChildren]=useState([emptyChild()]);
+  const [additionalInfo,setAdditionalInfo]=useState("");
+  const [errors,setErrors]=useState({});
+  const [calYear,setCalYear]=useState(getToday().getFullYear());
+  const [calMonth,setCalMonth]=useState(getToday().getMonth());
+
+  // booked dates from confirmed requests
+  const bookedDates = {};
+  requests.forEach(r => { if(r.status==="confirmed") bookedDates[r.date]=true; });
+
+  function toggleMonth(dir){let m=calMonth+dir,y=calYear;if(m>11){m=0;y++;}if(m<0){m=11;y--;}setCalMonth(m);setCalYear(y);}
+  function updateKids(n){setNumKids(n);setChildren(Array.from({length:n},(_,i)=>children[i]||emptyChild()));}
+  function updateChild(i,f,v){const c=[...children];c[i]={...c[i],[f]:v};setChildren(c);}
+  function validateStep2(){const e={};if(!parentName.trim())e.parentName="Required";if(!parentEmail.includes("@"))e.parentEmail="Valid email required";if(!parentPhone.trim())e.parentPhone="Required";if(!distance)e.distance="Required";if(!hours)e.hours="Required";setErrors(e);return!Object.keys(e).length;}
+  function validateStep3(){const e={};children.forEach((c,i)=>{if(!c.age)e[`age_${i}`]="Required";if(!c.allergies)e[`allergies_${i}`]="Required";if(c.allergies&&c.allergies!=="none"&&!c.epipen)e[`epipen_${i}`]="Required";});setErrors(e);return!Object.keys(e).length;}
+  function submitRequest(){
+    const req={id:Date.now(),date:formatDateKey(selectedDate),time:selectedTime,distance,hours,parentName,parentEmail,parentPhone,children,additionalInfo,status:"pending",note:"",submittedAt:new Date().toISOString()};
+    setRequests([...requests,req]);
+    const sub=encodeURIComponent(`New Babysitting Request from ${parentName}`);
+    const bod=encodeURIComponent(`New request!\n\nDate: ${formatDateDisplay(formatDateKey(selectedDate))}\nTime: ${selectedTime}\nHours: ${hours}\nDistance: ${distance}\nParent: ${parentName}\nEmail: ${parentEmail}\nPhone: ${parentPhone}\nChildren: ${children.length}\n\nLog into your admin panel to review and respond.`);
+    window.open(`mailto:${contact.email}?subject=${sub}&body=${bod}`,"_blank");
     setStep(5);
   }
 
-  const dayKey = selectedDate ? formatDateKey(selectedDate) : null;
-  const availableSlots = dayKey ? (availability[dayKey] || []) : [];
+  const dayKey=selectedDate?formatDateKey(selectedDate):null;
+  const availableSlots=dayKey?(availability[dayKey]||[]):[];
+  const isDayBooked=dayKey&&bookedDates[dayKey];
 
-  if (step === 5) {
-    return (
-      <div style={{ maxWidth:600, margin:"60px auto", textAlign:"center" }}>
-        <div style={{ fontSize:72, marginBottom:24 }}>✅</div>
-        <h2 style={{ fontWeight:900, fontSize:32, color:"#1a3a2a", marginBottom:16 }}>Request Sent!</h2>
-        <p style={{ fontSize:18, color:"#6b8f71", lineHeight:1.8, marginBottom:24 }}>
-          Thank you! Your babysitting request has been received. <strong>{contact.name || "Ella"} will get back to you within 48 hours</strong> to confirm or discuss your booking.
-        </p>
-        <div style={{ ...styles.card, background:"#f0f7f3", border:"2px solid #b2d8bf", marginBottom:24 }}>
-          <div style={{ fontWeight:700, color:"#2d7a4f", marginBottom:4 }}>📅 {formatDateDisplay(dayKey)} at {selectedTime}</div>
-          <div style={{ fontSize:14, color:"#555" }}>{children.length} child{children.length > 1 ? "ren" : ""} · {hours} · {distance}</div>
+  if(step===5) return <div style={{maxWidth:600,margin:"60px auto",textAlign:"center"}}>
+    <div style={{fontSize:72,marginBottom:24}}>✅</div>
+    <h2 style={{fontWeight:900,fontSize:32,color:"#1a3a2a",marginBottom:16}}>Request Sent!</h2>
+    <p style={{fontSize:18,color:"#6b8f71",lineHeight:1.8,marginBottom:24}}>Thank you! Your request has been received. <strong>{contact.name||"Ella"} will get back to you within 48 hours</strong> to confirm or discuss your booking.</p>
+    <div style={{...S.card,background:"#f0f7f3",border:"2px solid #b2d8bf",marginBottom:24}}>
+      <div style={{fontWeight:700,color:"#2d7a4f",marginBottom:4}}>📅 {formatDateDisplay(dayKey)} at {selectedTime}</div>
+      <div style={{fontSize:14,color:"#555"}}>{children.length} child{children.length>1?"ren":""} · {hours} · {distance}</div>
+    </div>
+    <button onClick={()=>{setStep(1);setSelectedDate(null);setSelectedTime("");setDistance("");setHours("");setParentName("");setParentEmail("");setParentPhone("");setChildren([emptyChild()]);setAdditionalInfo("");}} style={S.btnO}>Make Another Request</button>
+  </div>;
+
+  return <div style={{maxWidth:780,margin:"0 auto"}}>
+    <SH title="Book a Session" subtitle="Check availability and submit a request"/>
+    <div style={{display:"flex",gap:0,marginBottom:36,background:"#f0f7f3",borderRadius:12,overflow:"hidden"}}>
+      {[["1","Date & Time"],["2","Your Info"],["3","Children"],["4","Review"]].map(([n,label])=>(
+        <div key={n} style={{flex:1,padding:"12px 8px",textAlign:"center",background:parseInt(n)===step?"#2d7a4f":parseInt(n)<step?"#b2d8bf":"transparent"}}>
+          <div style={{fontSize:11,fontWeight:700,color:parseInt(n)<=step?"#fff":"#6b8f71",textTransform:"uppercase",letterSpacing:1}}>Step {n}</div>
+          <div style={{fontSize:13,fontWeight:700,color:parseInt(n)<=step?"#fff":"#aaa"}}>{label}</div>
         </div>
-        <button onClick={() => { setStep(1); setSelectedDate(null); setSelectedTime(""); setDistance(""); setHours(""); setParentName(""); setParentEmail(""); setParentPhone(""); setChildren([emptyChild()]); setAdditionalInfo(""); }}
-          style={styles.btnOutline}>Make Another Request</button>
-      </div>
-    );
-  }
+      ))}
+    </div>
 
-  return (
-    <div style={{ maxWidth:780, margin:"0 auto" }}>
-      <SectionHeader title="Book a Session" subtitle="Check availability and submit a request" />
-
-      {/* Progress */}
-      <div style={{ display:"flex", gap:0, marginBottom:36, background:"#f0f7f3", borderRadius:12, overflow:"hidden" }}>
-        {[["1","Date & Time"],["2","Your Info"],["3","Children"],["4","Review"]].map(([n, label]) => (
-          <div key={n} style={{ flex:1, padding:"12px 8px", textAlign:"center", background: parseInt(n)===step ? "#2d7a4f" : parseInt(n)<step ? "#b2d8bf" : "transparent" }}>
-            <div style={{ fontSize:11, fontWeight:700, color: parseInt(n)<=step ? "#fff" : "#6b8f71", textTransform:"uppercase", letterSpacing:1 }}>Step {n}</div>
-            <div style={{ fontSize:13, fontWeight:700, color: parseInt(n)<=step ? "#fff" : "#aaa" }}>{label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* STEP 1: Date & Time */}
-      {step === 1 && (
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Choose a Date & Time</h3>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:24 }}>
-            <div>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-                <button onClick={() => toggleMonth(-1)} style={styles.navBtn}>‹</button>
-                <span style={{ fontWeight:700, color:"#1a3a2a" }}>{MONTHS[calMonth]} {calYear}</span>
-                <button onClick={() => toggleMonth(1)} style={styles.navBtn}>›</button>
-              </div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
-                {DAYS.map(d => <div key={d} style={{ textAlign:"center", fontSize:11, fontWeight:700, color:"#6b8f71", padding:"4px 0" }}>{d}</div>)}
-                {(() => {
-                  const cells = [];
-                  const first = getFirstDayOfMonth(calYear, calMonth);
-                  const total = getDaysInMonth(calYear, calMonth);
-                  for (let i=0;i<first;i++) cells.push(<div key={`e${i}`} />);
-                  for (let d=1;d<=total;d++) {
-                    const avail = isDayAvailable(calYear, calMonth, d);
-                    const dd = new Date(calYear, calMonth, d); dd.setHours(0,0,0,0);
-                    const key = formatDateKey(dd);
-                    const isSel = selectedDate && formatDateKey(selectedDate) === key;
-                    cells.push(
-                      <button key={d} onClick={() => avail && (setSelectedDate(dd), setSelectedTime(""))}
-                        style={{ ...styles.calDay, background: isSel ? "#2d7a4f" : avail ? "#d4edda" : "#f5f5f5",
-                          color: isSel ? "#fff" : avail ? "#1a3a2a" : "#ccc",
-                          cursor: avail ? "pointer" : "default",
-                          fontWeight: avail ? 700 : 400,
-                          border: avail && !isSel ? "2px solid #2d7a4f" : "2px solid transparent" }}>
-                        {d}
-                      </button>
-                    );
-                  }
-                  return cells;
-                })()}
-              </div>
-              <div style={{ fontSize:12, color:"#6b8f71", marginTop:8 }}>
-                <span style={{ display:"inline-block", width:10, height:10, background:"#d4edda", border:"2px solid #2d7a4f", borderRadius:2, marginRight:4 }}/>Available dates only
-              </div>
-            </div>
-            <div>
-              {!selectedDate && <div style={{ color:"#aaa", fontSize:14, paddingTop:20 }}>← Select an available date to see time slots.</div>}
-              {selectedDate && (
-                <>
-                  <div style={{ fontWeight:700, color:"#1a3a2a", marginBottom:12 }}>Available times on<br/>{formatDateDisplay(dayKey)}:</div>
-                  {availableSlots.map(slot => (
-                    <button key={slot} onClick={() => setSelectedTime(slot)}
-                      style={{ display:"block", width:"100%", marginBottom:8, padding:"12px", border: selectedTime===slot ? "2px solid #2d7a4f" : "2px solid #dde8e0",
-                        background: selectedTime===slot ? "#f0f7f3" : "#fff", borderRadius:10, cursor:"pointer",
-                        fontWeight: selectedTime===slot ? 700 : 400, color: selectedTime===slot ? "#2d7a4f" : "#333", fontSize:16, textAlign:"left" }}>
-                      {selectedTime===slot ? "✓ " : ""}{slot}
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-          <div style={{ marginTop:24, textAlign:"right" }}>
-            <button onClick={() => selectedDate && selectedTime && setStep(2)} style={{ ...styles.btnGreen, opacity: selectedDate && selectedTime ? 1 : 0.4 }}>Continue →</button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 2: Parent Info */}
-      {step === 2 && (
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Your Contact Information</h3>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-            <FormField label="Your Name *" error={errors.parentName}>
-              <input value={parentName} onChange={e => setParentName(e.target.value)} style={styles.input} placeholder="Jane Smith" />
-            </FormField>
-            <FormField label="Email Address *" error={errors.parentEmail}>
-              <input value={parentEmail} onChange={e => setParentEmail(e.target.value)} style={styles.input} placeholder="jane@email.com" type="email" />
-            </FormField>
-            <FormField label="Phone Number *" error={errors.parentPhone}>
-              <input value={parentPhone} onChange={e => setParentPhone(e.target.value)} style={styles.input} placeholder="(613) 555-0000" type="tel" />
-            </FormField>
-            <FormField label="How far away will you be? *" error={errors.distance}>
-              <select value={distance} onChange={e => setDistance(e.target.value)} style={styles.input}>
-                <option value="">Select distance...</option>
-                {DISTANCE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Approximately how long? *" error={errors.hours}>
-              <select value={hours} onChange={e => setHours(e.target.value)} style={styles.input}>
-                <option value="">Select hours...</option>
-                {HOURS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Number of Children *">
-              <select value={numKids} onChange={e => updateKids(parseInt(e.target.value))} style={styles.input}>
-                {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} child{n>1?"ren":""}</option>)}
-              </select>
-            </FormField>
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between", marginTop:24 }}>
-            <button onClick={() => setStep(1)} style={styles.btnOutline}>← Back</button>
-            <button onClick={() => validateStep2() && setStep(3)} style={styles.btnGreen}>Continue →</button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 3: Children */}
-      {step === 3 && (
+    {step===1&&<div style={S.card}>
+      <h3 style={S.cardTitle}>Choose a Date & Time</h3>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
         <div>
-          {children.map((child, i) => (
-            <div key={i} style={{ ...styles.card, marginBottom:20 }}>
-              <h3 style={{ ...styles.cardTitle, color:"#2d7a4f" }}>Child {i+1} of {numKids}</h3>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-                <FormField label="Age *" error={errors[`age_${i}`]}>
-                  <select value={child.age} onChange={e => updateChild(i,"age",e.target.value)} style={styles.input}>
-                    <option value="">Select age...</option>
-                    {AGE_OPTIONS.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                </FormField>
-                <FormField label="Special Needs (if any)">
-                  <input value={child.specialNeeds} onChange={e => updateChild(i,"specialNeeds",e.target.value)} style={styles.input} placeholder="e.g. Autism, mobility needs, etc." />
-                </FormField>
-                <FormField label="Allergies *" error={errors[`allergies_${i}`]}>
-                  <select value={child.allergies} onChange={e => updateChild(i,"allergies",e.target.value)} style={styles.input}>
-                    <option value="">Select...</option>
-                    <option value="none">No allergies</option>
-                    <option value="food">Food allergies</option>
-                    <option value="environmental">Environmental allergies</option>
-                    <option value="medication">Medication allergies</option>
-                    <option value="multiple">Multiple allergies</option>
-                  </select>
-                </FormField>
-                {child.allergies && child.allergies !== "none" && (
-                  <FormField label="EpiPen Available? *" error={errors[`epipen_${i}`]}>
-                    <select value={child.epipen} onChange={e => updateChild(i,"epipen",e.target.value)} style={styles.input}>
-                      <option value="">Select...</option>
-                      <option value="yes_available">Yes — EpiPen will be available</option>
-                      <option value="no_not_needed">No — not needed for these allergies</option>
-                      <option value="yes_needed">Yes — EpiPen is required</option>
-                    </select>
-                  </FormField>
-                )}
-              </div>
-              <FormField label="Additional Information for This Child" style={{ marginTop:12 }}>
-                <textarea value={child.additionalInfo} onChange={e => updateChild(i,"additionalInfo",e.target.value)}
-                  placeholder="Bedtime routines, favourite activities, fears, medications, dietary needs, etc."
-                  style={{ ...styles.input, minHeight:80, resize:"vertical" }} />
-              </FormField>
-            </div>
-          ))}
-          <div style={{ ...styles.card }}>
-            <FormField label="Any Additional Notes for Ella?">
-              <textarea value={additionalInfo} onChange={e => setAdditionalInfo(e.target.value)}
-                placeholder="Anything else Ella should know before the session..."
-                style={{ ...styles.input, minHeight:80, resize:"vertical" }} />
-            </FormField>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+            <button onClick={()=>toggleMonth(-1)} style={S.navBtn}>‹</button>
+            <span style={{fontWeight:700,color:"#1a3a2a"}}>{MONTHS[calMonth]} {calYear}</span>
+            <button onClick={()=>toggleMonth(1)} style={S.navBtn}>›</button>
           </div>
-          <div style={{ display:"flex", justifyContent:"space-between", marginTop:20 }}>
-            <button onClick={() => setStep(2)} style={styles.btnOutline}>← Back</button>
-            <button onClick={() => validateStep3() && setStep(4)} style={styles.btnGreen}>Review Request →</button>
+          <CalGrid calYear={calYear} calMonth={calMonth} availability={availability} selectedDate={selectedDate} onSelect={d=>{setSelectedDate(d);setSelectedTime("");}} adminMode={false} bookedDates={bookedDates}/>
+          <div style={{fontSize:12,color:"#6b8f71",marginTop:8,display:"flex",gap:12,flexWrap:"wrap"}}>
+            <span><span style={{display:"inline-block",width:10,height:10,background:"#d4edda",border:"2px solid #2d7a4f",borderRadius:2,marginRight:4}}/>Available</span>
+            <span><span style={{display:"inline-block",width:10,height:10,background:"#ffe0e0",border:"2px solid #e74c3c",borderRadius:2,marginRight:4}}/>Booked</span>
           </div>
         </div>
-      )}
-
-      {/* STEP 4: Review */}
-      {step === 4 && (
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Review Your Request</h3>
-          <div style={{ background:"#f0f7f3", borderRadius:10, padding:"16px 20px", marginBottom:20 }}>
-            <div style={{ fontWeight:800, fontSize:18, color:"#2d7a4f", marginBottom:4 }}>📅 {formatDateDisplay(dayKey)} at {selectedTime}</div>
-            <div style={{ fontSize:14, color:"#555" }}>{hours} · {distance}</div>
-          </div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:20 }}>
-            <Info label="Name" value={parentName} />
-            <Info label="Email" value={parentEmail} />
-            <Info label="Phone" value={parentPhone} />
-          </div>
-          <div style={{ fontWeight:700, color:"#1a3a2a", marginBottom:10 }}>{children.length} Child{children.length > 1 ? "ren" : ""}:</div>
-          {children.map((c, i) => (
-            <div key={i} style={{ background:"#f8f9fa", borderRadius:8, padding:"10px 14px", marginBottom:8, fontSize:14 }}>
-              <strong>Child {i+1}:</strong> Age {c.age} · Allergies: {c.allergies === "none" ? "None" : c.allergies}
-              {c.allergies !== "none" && c.epipen ? ` · EpiPen: ${c.epipen}` : ""}
-              {c.specialNeeds ? ` · Special needs: ${c.specialNeeds}` : ""}
-            </div>
-          ))}
-          <div style={{ background:"#fffbea", border:"1px solid #fce88a", borderRadius:10, padding:"14px 18px", marginBottom:20, fontSize:14, color:"#7a6000" }}>
-            <strong>⏱ Please note:</strong> {contact.name || "Ella"} will review your request and get back to you <strong>within 48 hours</strong> to confirm or discuss availability. This is a request, not a confirmed booking.
-          </div>
-          <div style={{ display:"flex", justifyContent:"space-between" }}>
-            <button onClick={() => setStep(3)} style={styles.btnOutline}>← Edit</button>
-            <button onClick={submitRequest} style={{ ...styles.btnGreen, fontSize:16, padding:"12px 32px" }}>Submit Request ✓</button>
-          </div>
+        <div>
+          {!selectedDate&&<div style={{color:"#aaa",fontSize:14,paddingTop:20}}>← Select an available date to see time slots.</div>}
+          {selectedDate&&isDayBooked&&<div style={{background:"#ffe0e0",borderRadius:10,padding:"16px",color:"#c0392b",fontWeight:700,fontSize:15,textAlign:"center"}}>🔒 This date is already booked.<br/><span style={{fontSize:13,fontWeight:400}}>Please select another date.</span></div>}
+          {selectedDate&&!isDayBooked&&<>
+            <div style={{fontWeight:700,color:"#1a3a2a",marginBottom:12}}>Available times on<br/>{formatDateDisplay(dayKey)}:</div>
+            {availableSlots.length===0&&<div style={{color:"#aaa",fontSize:14}}>No slots available.</div>}
+            {availableSlots.map(slot=><button key={slot} onClick={()=>setSelectedTime(slot)} style={{display:"block",width:"100%",marginBottom:8,padding:"12px",border:selectedTime===slot?"2px solid #2d7a4f":"2px solid #dde8e0",background:selectedTime===slot?"#f0f7f3":"#fff",borderRadius:10,cursor:"pointer",fontWeight:selectedTime===slot?700:400,color:selectedTime===slot?"#2d7a4f":"#333",fontSize:16,textAlign:"left"}}>{selectedTime===slot?"✓ ":""}{slot}</button>)}
+          </>}
         </div>
-      )}
-    </div>
-  );
+      </div>
+      <div style={{marginTop:24,textAlign:"right"}}><button onClick={()=>selectedDate&&selectedTime&&!isDayBooked&&setStep(2)} style={{...S.btnG,opacity:selectedDate&&selectedTime&&!isDayBooked?1:0.4}}>Continue →</button></div>
+    </div>}
+
+    {step===2&&<div style={S.card}>
+      <h3 style={S.cardTitle}>Your Contact Information</h3>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        <FF label="Your Name *" error={errors.parentName}><input value={parentName} onChange={e=>setParentName(e.target.value)} style={S.input} placeholder="Jane Smith"/></FF>
+        <FF label="Email Address *" error={errors.parentEmail}><input value={parentEmail} onChange={e=>setParentEmail(e.target.value)} style={S.input} placeholder="jane@email.com" type="email"/></FF>
+        <FF label="Phone Number *" error={errors.parentPhone}><input value={parentPhone} onChange={e=>setParentPhone(e.target.value)} style={S.input} placeholder="(613) 555-0000" type="tel"/></FF>
+        <FF label="How far away will you be? *" error={errors.distance}><select value={distance} onChange={e=>setDistance(e.target.value)} style={S.input}><option value="">Select...</option>{DISTANCE_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}</select></FF>
+        <FF label="Approximately how long? *" error={errors.hours}><select value={hours} onChange={e=>setHours(e.target.value)} style={S.input}><option value="">Select...</option>{HOURS_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}</select></FF>
+        <FF label="Number of Children *"><select value={numKids} onChange={e=>updateKids(parseInt(e.target.value))} style={S.input}>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>{n} child{n>1?"ren":""}</option>)}</select></FF>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:24}}><button onClick={()=>setStep(1)} style={S.btnO}>← Back</button><button onClick={()=>validateStep2()&&setStep(3)} style={S.btnG}>Continue →</button></div>
+    </div>}
+
+    {step===3&&<div>
+      {children.map((child,i)=><div key={i} style={{...S.card,marginBottom:20}}>
+        <h3 style={{...S.cardTitle,color:"#2d7a4f"}}>Child {i+1} of {numKids}</h3>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <FF label="Age *" error={errors[`age_${i}`]}><select value={child.age} onChange={e=>updateChild(i,"age",e.target.value)} style={S.input}><option value="">Select age...</option>{AGE_OPTIONS.map(a=><option key={a} value={a}>{a}</option>)}</select></FF>
+          <FF label="Special Needs (if any)"><input value={child.specialNeeds} onChange={e=>updateChild(i,"specialNeeds",e.target.value)} style={S.input} placeholder="e.g. Autism, mobility needs..."/></FF>
+          <FF label="Allergies *" error={errors[`allergies_${i}`]}><select value={child.allergies} onChange={e=>updateChild(i,"allergies",e.target.value)} style={S.input}><option value="">Select...</option><option value="none">No allergies</option><option value="food">Food allergies</option><option value="environmental">Environmental allergies</option><option value="medication">Medication allergies</option><option value="multiple">Multiple allergies</option></select></FF>
+          {child.allergies&&child.allergies!=="none"&&<FF label="EpiPen Available? *" error={errors[`epipen_${i}`]}><select value={child.epipen} onChange={e=>updateChild(i,"epipen",e.target.value)} style={S.input}><option value="">Select...</option><option value="yes_available">Yes — EpiPen will be available</option><option value="no_not_needed">No — not needed for these allergies</option><option value="yes_needed">Yes — EpiPen is required</option></select></FF>}
+        </div>
+        <FF label="Additional Information for This Child" style={{marginTop:12}}><textarea value={child.additionalInfo} onChange={e=>updateChild(i,"additionalInfo",e.target.value)} placeholder="Bedtime routines, favourites, fears, medications, dietary needs..." style={{...S.input,minHeight:80,resize:"vertical"}}/></FF>
+      </div>)}
+      <div style={S.card}><FF label="Any Additional Notes for Ella?"><textarea value={additionalInfo} onChange={e=>setAdditionalInfo(e.target.value)} placeholder="Anything else Ella should know..." style={{...S.input,minHeight:80,resize:"vertical"}}/></FF></div>
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:20}}><button onClick={()=>setStep(2)} style={S.btnO}>← Back</button><button onClick={()=>validateStep3()&&setStep(4)} style={S.btnG}>Review Request →</button></div>
+    </div>}
+
+    {step===4&&<div style={S.card}>
+      <h3 style={S.cardTitle}>Review Your Request</h3>
+      <div style={{background:"#f0f7f3",borderRadius:10,padding:"16px 20px",marginBottom:20}}>
+        <div style={{fontWeight:800,fontSize:18,color:"#2d7a4f",marginBottom:4}}>📅 {formatDateDisplay(dayKey)} at {selectedTime}</div>
+        <div style={{fontSize:14,color:"#555"}}>{hours} · {distance}</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}><Inf label="Name" value={parentName}/><Inf label="Email" value={parentEmail}/><Inf label="Phone" value={parentPhone}/></div>
+      <div style={{fontWeight:700,color:"#1a3a2a",marginBottom:10}}>{children.length} Child{children.length>1?"ren":""}:</div>
+      {children.map((c,i)=><div key={i} style={{background:"#f8f9fa",borderRadius:8,padding:"10px 14px",marginBottom:8,fontSize:14}}><strong>Child {i+1}:</strong> Age {c.age} · Allergies: {c.allergies==="none"?"None":c.allergies}{c.allergies!=="none"&&c.epipen?` · EpiPen: ${c.epipen}`:""}{c.specialNeeds?` · Needs: ${c.specialNeeds}`:""}</div>)}
+      <div style={{background:"#fffbea",border:"1px solid #fce88a",borderRadius:10,padding:"14px 18px",marginBottom:20,fontSize:14,color:"#7a6000"}}><strong>⏱ Please note:</strong> {contact.name||"Ella"} will review your request and get back to you <strong>within 48 hours</strong>. This is a request, not a confirmed booking.</div>
+      <div style={{display:"flex",justifyContent:"space-between"}}><button onClick={()=>setStep(3)} style={S.btnO}>← Edit</button><button onClick={submitRequest} style={{...S.btnG,fontSize:16,padding:"12px 32px"}}>Submit Request ✓</button></div>
+    </div>}
+  </div>;
 }
 
-function SectionHeader({ title, subtitle }) {
-  return (
-    <div style={{ marginBottom:36, textAlign:"center" }}>
-      <h2 style={{ fontSize:36, fontWeight:900, color:"#1a3a2a", margin:"0 0 8px" }}>{title}</h2>
-      <div style={{ width:48, height:4, background:"#2d7a4f", borderRadius:2, margin:"0 auto 12px" }} />
-      {subtitle && <p style={{ fontSize:16, color:"#6b8f71", margin:0 }}>{subtitle}</p>}
-    </div>
-  );
-}
-
-function FormField({ label, children, error, style }) {
-  return (
-    <div style={{ marginBottom:4, ...style }}>
-      <label style={styles.label}>{label}</label>
-      {children}
-      {error && <div style={{ fontSize:12, color:"#d9534f", marginTop:4 }}>⚠ {error}</div>}
-    </div>
-  );
-}
-
-// ─── STYLES ───────────────────────────────────────────────────────────────────
-const styles = {
-  card: { background:"#fff", borderRadius:16, padding:24, boxShadow:"0 2px 16px rgba(0,0,0,0.06)", border:"1px solid #eef2ee" },
-  cardTitle: { fontWeight:800, fontSize:20, color:"#1a3a2a", marginTop:0, marginBottom:20 },
-  sectionTitle: { fontWeight:800, fontSize:22, color:"#1a3a2a", marginBottom:16 },
-  label: { display:"block", fontSize:13, fontWeight:700, color:"#555", marginBottom:6, letterSpacing:.3 },
-  input: { width:"100%", padding:"10px 14px", border:"1px solid #c8dcd0", borderRadius:10, fontSize:15, fontFamily:"Georgia, serif", boxSizing:"border-box", background:"#fafcfb" },
-  btnGreen: { background:"linear-gradient(135deg, #2d7a4f, #3a9d6b)", color:"#fff", border:"none", borderRadius:10, padding:"12px 28px", cursor:"pointer", fontWeight:700, fontSize:15, fontFamily:"Georgia, serif" },
-  btnOutline: { background:"#fff", color:"#2d7a4f", border:"2px solid #2d7a4f", borderRadius:10, padding:"10px 24px", cursor:"pointer", fontWeight:700, fontSize:14, fontFamily:"Georgia, serif" },
-  navBtn: { background:"#f0f7f3", border:"none", borderRadius:8, width:32, height:32, cursor:"pointer", fontSize:18, color:"#2d7a4f", fontWeight:700 },
-  calDay: { aspectRatio:"1", borderRadius:8, border:"2px solid transparent", fontSize:13, cursor:"pointer", fontFamily:"Georgia, serif", display:"flex", alignItems:"center", justifyContent:"center" },
-};
-
-// ─── ROOT ─────────────────────────────────────────────────────────────────────
 function App() {
-  const [bio, setBio] = useStorage(STORAGE_KEYS.BIO, DEFAULT_BIO);
-  const [credentials, setCredentials] = useStorage(STORAGE_KEYS.CREDENTIALS, DEFAULT_CREDENTIALS);
-  const [rates, setRates] = useStorage(STORAGE_KEYS.RATES, DEFAULT_RATES);
-  const [availability, setAvailability] = useStorage(STORAGE_KEYS.AVAILABILITY, {});
-  const [requests, setRequests] = useStorage(STORAGE_KEYS.REQUESTS, []);
-  const [contact, setContact] = useStorage(STORAGE_KEYS.CONTACT, DEFAULT_CONTACT);
-  const [paymentEmail, setPaymentEmail] = useStorage(STORAGE_KEYS.PAYMENT_EMAIL, DEFAULT_PAYMENT_EMAIL);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [bio,setBio]=useStorage(STORAGE_KEYS.BIO,DEFAULT_BIO);
+  const [credentials,setCredentials]=useStorage(STORAGE_KEYS.CREDENTIALS,DEFAULT_CREDENTIALS);
+  const [rates,setRates]=useStorage(STORAGE_KEYS.RATES,DEFAULT_RATES);
+  const [availability,setAvailability]=useStorage(STORAGE_KEYS.AVAILABILITY,{});
+  const [requests,setRequests]=useStorage(STORAGE_KEYS.REQUESTS,[]);
+  const [contact,setContact]=useStorage(STORAGE_KEYS.CONTACT,DEFAULT_CONTACT);
+  const [paymentEmail,setPaymentEmail]=useStorage(STORAGE_KEYS.PAYMENT_EMAIL,DEFAULT_PAYMENT_EMAIL);
+  const [confirmTemplate,setConfirmTemplate]=useStorage(STORAGE_KEYS.CONFIRM_TEMPLATE,DEFAULT_CONFIRM_TEMPLATE);
+  const [declineTemplate,setDeclineTemplate]=useStorage(STORAGE_KEYS.DECLINE_TEMPLATE,DEFAULT_DECLINE_TEMPLATE);
+  const [isAdmin,setIsAdmin]=useState(false);
 
-  if (isAdmin) {
-    return <AdminPanel onExit={() => setIsAdmin(false)}
-      bio={bio} setBio={setBio}
-      credentials={credentials} setCredentials={setCredentials}
-      rates={rates} setRates={setRates}
-      availability={availability} setAvailability={setAvailability}
-      requests={requests} setRequests={setRequests}
-      contact={contact} setContact={setContact}
-      paymentEmail={paymentEmail} setPaymentEmail={setPaymentEmail} />;
-  }
+  if(isAdmin) return <AdminPanel onExit={()=>setIsAdmin(false)} bio={bio} setBio={setBio} credentials={credentials} setCredentials={setCredentials} rates={rates} setRates={setRates} availability={availability} setAvailability={setAvailability} requests={requests} setRequests={setRequests} contact={contact} setContact={setContact} paymentEmail={paymentEmail} setPaymentEmail={setPaymentEmail} confirmTemplate={confirmTemplate} setConfirmTemplate={setConfirmTemplate} declineTemplate={declineTemplate} setDeclineTemplate={setDeclineTemplate}/>;
 
-  return <PublicSite bio={bio} credentials={credentials} rates={rates}
-    availability={availability} requests={requests} setRequests={setRequests}
-    contact={contact} paymentEmail={paymentEmail} setIsAdmin={setIsAdmin} />;
+  return <PublicSite bio={bio} credentials={credentials} rates={rates} availability={availability} requests={requests} setRequests={setRequests} contact={contact} paymentEmail={paymentEmail} setIsAdmin={setIsAdmin}/>;
+}
+
+function PublicSite({bio,credentials,rates,availability,requests,setRequests,contact,paymentEmail,setIsAdmin}) {
+  const [section,setSection]=useState("home");
+  const navItems=[["home","Home"],["about","About"],["credentials","Credentials"],["rates","Rates & Payment"],["booking","Book Now"]];
+  return <div style={{minHeight:"100vh",background:"#f9fbf9",fontFamily:"Georgia,serif"}}>
+    <nav style={{background:"#fff",borderBottom:"1px solid #dde8e0",position:"sticky",top:0,zIndex:100}}>
+      <div style={{maxWidth:1100,margin:"0 auto",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",height:64}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:38,height:38,background:"linear-gradient(135deg,#2d7a4f,#6fcf97)",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:900,fontSize:18}}>E</div>
+          <div><div style={{fontWeight:800,fontSize:17,color:"#1a3a2a"}}>{contact.name||"Ella"}'s Babysitting</div><div style={{fontSize:11,color:"#6b8f71",letterSpacing:1.5,textTransform:"uppercase"}}>Professional Childcare</div></div>
+        </div>
+        <div style={{display:"flex",gap:4,alignItems:"center",flexWrap:"wrap"}}>
+          {navItems.map(([key,label])=><button key={key} onClick={()=>setSection(key)} style={{background:section===key?"#f0f7f3":"none",border:"none",color:section===key?"#2d7a4f":"#555",fontWeight:section===key?700:400,padding:"8px 14px",borderRadius:8,cursor:"pointer",fontSize:14,fontFamily:"Georgia,serif"}}>{label}</button>)}
+          <button onClick={()=>{const p=prompt("Admin password:");if(p===ADMIN_PASSWORD)setIsAdmin(true);else if(p!==null)alert("Incorrect password.");}} style={{background:"none",border:"1px solid #c8dcd0",color:"#6b8f71",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,marginLeft:8}}>⚙ Admin</button>
+        </div>
+      </div>
+    </nav>
+    <div style={{maxWidth:1100,margin:"0 auto",padding:"40px 24px"}}>
+      {section==="home"&&<HomePage contact={contact} setSection={setSection}/>}
+      {section==="about"&&<AboutPage bio={bio} contact={contact}/>}
+      {section==="credentials"&&<CredentialsPage credentials={credentials}/>}
+      {section==="rates"&&<RatesPage rates={rates} paymentEmail={paymentEmail}/>}
+      {section==="booking"&&<BookingPage availability={availability} requests={requests} setRequests={setRequests} contact={contact} paymentEmail={paymentEmail}/>}
+    </div>
+    <footer style={{background:"#1a3a2a",color:"rgba(255,255,255,0.6)",textAlign:"center",padding:"24px",fontSize:13,marginTop:60}}>
+      <div style={{color:"#fff",fontWeight:700,marginBottom:4}}>{contact.name||"Ella"}'s Babysitting Services</div>
+      {contact.email&&<div>{contact.email}</div>}
+      {contact.phone&&<div>{contact.phone}</div>}
+      <div style={{marginTop:8,fontSize:11}}>© {new Date().getFullYear()} · All rights reserved</div>
+    </footer>
+  </div>;
 }
 
 
-
-    const root = ReactDOM.createRoot(document.getElementById('root'));
+    const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(<App />);
   </script>
 </body>

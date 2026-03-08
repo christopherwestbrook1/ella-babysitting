@@ -180,7 +180,7 @@ function RequestCard({req,onUpdate,replyText,setReplyText,confirmTemplate,declin
         <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:12,fontWeight:700,color:sc,background:`${sc}22`,padding:"4px 10px",borderRadius:20}}>{sl}</span><span style={{color:"#999"}}>{open?"▲":"▼"}</span></div>
       </div>
       {open&&<div style={{marginTop:16}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}><Inf label="Email" value={req.parentEmail}/><Inf label="Phone" value={req.parentPhone}/><Inf label="Distance" value={req.distance}/><Inf label="Hours" value={req.hours}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}><Inf label="Email" value={req.parentEmail}/><Inf label="Phone" value={req.parentPhone}/><Inf label="Address" value={req.parentAddress}/><Inf label="Distance" value={req.distance}/><Inf label="Hours" value={req.hours}/></div>
         <div style={{fontWeight:700,fontSize:14,color:"#1a3a2a",marginBottom:8}}>Children:</div>
         {req.children.map((c,i)=><div key={i} style={{background:"#f0f7f3",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
           <div style={{fontWeight:700,marginBottom:4}}>Child {i+1}: Age {c.age}</div>
@@ -441,6 +441,7 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
   const [parentName,setParentName]=useState("");
   const [parentEmail,setParentEmail]=useState("");
   const [parentPhone,setParentPhone]=useState("");
+  const [parentAddress,setParentAddress]=useState("");
   const [numKids,setNumKids]=useState(1);
   const [children,setChildren]=useState([emptyChild()]);
   const [additionalInfo,setAdditionalInfo]=useState("");
@@ -455,13 +456,13 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
   function toggleMonth(dir){let m=calMonth+dir,y=calYear;if(m>11){m=0;y++;}if(m<0){m=11;y--;}setCalMonth(m);setCalYear(y);}
   function updateKids(n){setNumKids(n);setChildren(Array.from({length:n},(_,i)=>children[i]||emptyChild()));}
   function updateChild(i,f,v){const c=[...children];c[i]={...c[i],[f]:v};setChildren(c);}
-  function validateStep2(){const e={};if(!parentName.trim())e.parentName="Required";if(!parentEmail.includes("@"))e.parentEmail="Valid email required";if(!parentPhone.trim())e.parentPhone="Required";if(!distance)e.distance="Required";if(!hours)e.hours="Required";setErrors(e);return!Object.keys(e).length;}
+  function validateStep2(){const e={};if(!parentName.trim())e.parentName="Required";if(!parentEmail.includes("@"))e.parentEmail="Valid email required";if(!parentPhone.trim())e.parentPhone="Required";if(!parentAddress.trim())e.parentAddress="Required";if(!distance)e.distance="Required";if(!hours)e.hours="Required";setErrors(e);return!Object.keys(e).length;}
   function validateStep3(){const e={};children.forEach((c,i)=>{if(!c.age)e[`age_${i}`]="Required";if(!c.allergies)e[`allergies_${i}`]="Required";if(c.allergies&&c.allergies!=="none"&&!c.epipen)e[`epipen_${i}`]="Required";});setErrors(e);return!Object.keys(e).length;}
   function submitRequest(){
-    const req={id:Date.now(),date:formatDateKey(selectedDate),time:selectedTime,distance,hours,parentName,parentEmail,parentPhone,children,additionalInfo,status:"pending",note:"",submittedAt:new Date().toISOString()};
+    const req={id:Date.now(),date:formatDateKey(selectedDate),time:selectedTime,distance,hours,parentName,parentEmail,parentPhone,parentAddress,children,additionalInfo,status:"pending",note:"",submittedAt:new Date().toISOString()};
     setRequests([...requests,req]);
     const sub=encodeURIComponent(`New Babysitting Request from ${parentName}`);
-    const bod=encodeURIComponent(`New request!\n\nDate: ${formatDateDisplay(formatDateKey(selectedDate))}\nTime: ${selectedTime}\nHours: ${hours}\nDistance: ${distance}\nParent: ${parentName}\nEmail: ${parentEmail}\nPhone: ${parentPhone}\nChildren: ${children.length}\n\nLog into your admin panel to review and respond.`);
+    const bod=encodeURIComponent(`New request!\n\nDate: ${formatDateDisplay(formatDateKey(selectedDate))}\nTime: ${selectedTime}\nHours: ${hours}\nDistance: ${distance}\nAddress: ${parentAddress}\nParent: ${parentName}\nEmail: ${parentEmail}\nPhone: ${parentPhone}\nChildren: ${children.length}\n\nLog into your admin panel to review and respond.`);
     window.open(`mailto:${contact.email}?subject=${sub}&body=${bod}`,"_blank");
     setStep(5);
   }
@@ -478,7 +479,7 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
       <div style={{fontWeight:700,color:"#2d7a4f",marginBottom:4}}>📅 {formatDateDisplay(dayKey)} at {selectedTime}</div>
       <div style={{fontSize:14,color:"#555"}}>{children.length} child{children.length>1?"ren":""} · {hours} · {distance}</div>
     </div>
-    <button onClick={()=>{setStep(1);setSelectedDate(null);setSelectedTime("");setDistance("");setHours("");setParentName("");setParentEmail("");setParentPhone("");setChildren([emptyChild()]);setAdditionalInfo("");}} style={S.btnO}>Make Another Request</button>
+    <button onClick={()=>{setStep(1);setSelectedDate(null);setSelectedTime("");setDistance("");setHours("");setParentName("");setParentEmail("");setParentPhone("");setParentAddress("");setChildren([emptyChild()]);setAdditionalInfo("");}} style={S.btnO}>Make Another Request</button>
   </div>;
 
   return <div style={{maxWidth:780,margin:"0 auto"}}>
@@ -526,6 +527,7 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
         <FF label="Your Name *" error={errors.parentName}><input value={parentName} onChange={e=>setParentName(e.target.value)} style={S.input} placeholder="Jane Smith"/></FF>
         <FF label="Email Address *" error={errors.parentEmail}><input value={parentEmail} onChange={e=>setParentEmail(e.target.value)} style={S.input} placeholder="jane@email.com" type="email"/></FF>
         <FF label="Phone Number *" error={errors.parentPhone}><input value={parentPhone} onChange={e=>setParentPhone(e.target.value)} style={S.input} placeholder="(613) 555-0000" type="tel"/></FF>
+        <FF label="Home Address *" error={errors.parentAddress}><input value={parentAddress} onChange={e=>setParentAddress(e.target.value)} style={S.input} placeholder="123 Main St, City, ON"/></FF>
         <FF label="How far away will you be? *" error={errors.distance}><select value={distance} onChange={e=>setDistance(e.target.value)} style={S.input}><option value="">Select...</option>{DISTANCE_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}</select></FF>
         <FF label="Approximately how long? *" error={errors.hours}><select value={hours} onChange={e=>setHours(e.target.value)} style={S.input}><option value="">Select...</option>{HOURS_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}</select></FF>
         <FF label="Number of Children *"><select value={numKids} onChange={e=>updateKids(parseInt(e.target.value))} style={S.input}>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>{n} child{n>1?"ren":""}</option>)}</select></FF>
@@ -554,7 +556,7 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
         <div style={{fontWeight:800,fontSize:18,color:"#2d7a4f",marginBottom:4}}>📅 {formatDateDisplay(dayKey)} at {selectedTime}</div>
         <div style={{fontSize:14,color:"#555"}}>{hours} · {distance}</div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}><Inf label="Name" value={parentName}/><Inf label="Email" value={parentEmail}/><Inf label="Phone" value={parentPhone}/></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}><Inf label="Name" value={parentName}/><Inf label="Email" value={parentEmail}/><Inf label="Phone" value={parentPhone}/><Inf label="Address" value={parentAddress}/></div>
       <div style={{fontWeight:700,color:"#1a3a2a",marginBottom:10}}>{children.length} Child{children.length>1?"ren":""}:</div>
       {children.map((c,i)=><div key={i} style={{background:"#f8f9fa",borderRadius:8,padding:"10px 14px",marginBottom:8,fontSize:14}}><strong>Child {i+1}:</strong> Age {c.age} · Allergies: {c.allergies==="none"?"None":c.allergies}{c.allergies!=="none"&&c.epipen?` · EpiPen: ${c.epipen}`:""}{c.specialNeeds?` · Needs: ${c.specialNeeds}`:""}</div>)}
       <div style={{background:"#fffbea",border:"1px solid #fce88a",borderRadius:10,padding:"14px 18px",marginBottom:20,fontSize:14,color:"#7a6000"}}><strong>⏱ Please note:</strong> {contact.name||"Ella"} will review your request and get back to you <strong>within 48 hours</strong>. This is a request, not a confirmed booking.</div>

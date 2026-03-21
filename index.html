@@ -112,7 +112,7 @@ const MONTHS = ["January","February","March","April","May","June","July","August
 const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const DISTANCE_OPTIONS = ["Less than 5 minutes away","5–15 minutes away","15–30 minutes away","30–60 minutes away","Over 1 hour away"];
 const HOURS_OPTIONS = ["1–2 hours","2–3 hours","3–4 hours","4–5 hours","5–6 hours","6–8 hours","8+ hours"];
-const AGE_OPTIONS = ["Under 1 year","1 year","2 years","3 years","4 years","5 years","6 years","7 years","8 years","9 years","10 years","11 years","12 years","13+ years"];
+const AGE_OPTIONS = ["3 years","4 years","5 years","6 years","7 years","8 years","9 years","10 years","11 years","12 years","13+ years"];
 
 function getToday() { const d = new Date(); d.setHours(0,0,0,0); return d; }
 function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth()+n); return d; }
@@ -664,7 +664,7 @@ function BookingPage({availability,requests,setRequests,contact,paymentEmail}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}><Inf label="Name" value={parentName}/><Inf label="Email" value={parentEmail}/><Inf label="Phone" value={parentPhone}/><Inf label="Address" value={parentAddress}/></div>
       <div style={{fontWeight:700,color:"#2d1b4e",marginBottom:10}}>{children.length} Child{children.length>1?"ren":""}:</div>
       {children.map((c,i)=><div key={i} style={{background:"#f8f9fa",borderRadius:8,padding:"10px 14px",marginBottom:8,fontSize:14}}><strong>Child {i+1}:</strong> Age {c.age} · Allergies: {c.allergies==="none"?"None":c.allergies}{c.allergies!=="none"&&c.epipen?` · Severity: ${c.epipen==="severe_epipen"?"Severe — EpiPen available":"Not needed"}`:""}{c.specialNeeds?` · Needs: ${c.specialNeeds}`:""}</div>)}
-      <div style={{background:"#fffbea",border:"1px solid #fce88a",borderRadius:10,padding:"14px 18px",marginBottom:20,fontSize:14,color:"#7a6000"}}><strong>⏱ Please note:</strong> {contact.name||"Ella"} will review your request and get back to you <strong>within 48 hours</strong>. This is a request, not a confirmed booking.</div>
+      <div style={{background:"#fffbea",border:"1px solid #fce88a",borderRadius:10,padding:"14px 18px",marginBottom:20,fontSize:14,color:"#7a6000"}}><strong>⏱ Please note:</strong> {contact.name||"Ella"} will review your request and get back to you <strong>within 48 hours</strong>. This is a request, not a confirmed booking.<br/><br/>If you do not hear back within 48 hours please feel free to reach out to Ella's mom at <strong>brookeginsler@gmail.com</strong> just to make sure we received your request.</div>
       <div style={{display:"flex",justifyContent:"space-between"}}><button onClick={()=>setStep(3)} style={S.btnO}>← Edit</button><button onClick={submitRequest} style={{...S.btnG,fontSize:16,padding:"12px 32px"}}>Submit Request ✓</button></div>
     </div>}
   </div>;
